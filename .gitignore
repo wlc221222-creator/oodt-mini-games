@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+dist/
+build/
+*.spec
+savegame.json
+_tmp_save.json
+visual_backup*/
+.pytest_cache/
+.DS_Store
+Thumbs.db
