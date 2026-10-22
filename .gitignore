@@ -6,6 +6,8 @@ dist/
 build/
 *.spec
 savegame.json
+progress.json
+progress.tmp
 _tmp_save.json
 visual_backup*/
 .pytest_cache/

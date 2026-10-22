@@ -212,6 +212,7 @@ class Assets:
         self._misc["bar"] = one(os.path.join(scr, "ChooserBackground.png"))
         self._misc["panel"] = one(os.path.join(scr, "PanelBackground.png"))
         self._misc["boom"] = one(os.path.join(scr, "Boom.png"))
+        self._misc["shovel"] = one(os.path.join(scr, "Shovel.png"))
         self._misc["start_button"] = one(os.path.join(scr, "StartButton.png"))
         self._misc["adventure"] = one(os.path.join(scr, "Adventure_0.png"))
         self._misc["adventure_hover"] = one(os.path.join(scr, "Adventure_1.png"))
@@ -228,11 +229,22 @@ class Assets:
 
         # Bullets are cropped with the original's own rectangles.
         bdir = os.path.join(GFX_DIR, "Bullets")
-        for name, sub in (("PeaNormal", "PeaNormal"), ("PeaIce", "PeaIce")):
+        for name, sub in (("PeaNormal", "PeaNormal"), ("PeaIce", "PeaIce"),
+                          ("BulletMushRoom", "BulletMushRoom")):
             r = self.rects["plant"].get(name, {})
             self._bullet[name] = one(
                 os.path.join(bdir, sub, f"{sub}_0.png"),
                 (r.get("x", 0), 0, r.get("width", 28), r.get("height", 34)))
+            if name == "BulletMushRoom":
+                # This source sprite uses a solid purple colour key as well as
+                # alpha. Preserve the complete leading spore before scaling.
+                spore = one(os.path.join(bdir, sub, f"{sub}_0.png"))
+                if spore is not None:
+                    key = spore.get_at((0, 0))[:3]
+                    spore.set_colorkey(key)
+                    clean = pygame.Surface(spore.get_size(), pygame.SRCALPHA)
+                    clean.blit(spore, (0, 0))
+                    self._bullet[name] = pygame.transform.smoothscale(clean, (43, 21))
 
     # ---------------------------------------------------------------- public
     def plant(self, name: str) -> List[pygame.Surface]:
@@ -242,6 +254,12 @@ class Assets:
             if r:
                 self._plant[name] = self._frames(
                     folder, name, r.get("x", 0), r.get("width"))
+                # Squash and Puff-shroom frames include unused vertical canvas.
+                y, height = r.get("y", 0), r.get("height")
+                if height:
+                    self._plant[name] = [frame.subsurface((0, y, frame.get_width(),
+                                           min(height, frame.get_height() - y))).copy()
+                                         for frame in self._plant[name]]
             else:
                 self._plant[name] = self._frames(folder, name)
         return self._plant[name]
@@ -254,6 +272,8 @@ class Assets:
             "cone": ("ConeheadZombie", "ConeheadZombie", "ConeheadZombieAttack"),
             "bucket": ("BucketheadZombie", "BucketheadZombie",
                        "BucketheadZombieAttack"),
+            "flag": ("FlagZombie", "FlagZombie", "FlagZombieAttack"),
+            "newspaper": ("NewspaperZombie", "NewspaperZombie", "NewspaperZombieAttack"),
         }
         folder, base, attack = table[kind]
         zdir = os.path.join(GFX_DIR, "Zombies", folder)
@@ -267,6 +287,10 @@ class Assets:
             "die": self._frames(ndir, "ZombieDie", zx("ZombieDie")),
             "boom": self._frames(ndir, "BoomDie", zx("BoomDie")),
         }
+        if kind == "newspaper":
+            sets["rage_walk"] = self._frames(zdir, "NewspaperZombieNoPaper", zx("NewspaperZombieNoPaper"))
+            sets["rage_attack"] = self._frames(zdir, "NewspaperZombieNoPaperAttack", zx("NewspaperZombieNoPaperAttack"))
+            sets["die"] = self._frames(zdir, "NewspaperZombieDie", zx("NewspaperZombieDie"))
         self._zombie[kind] = sets
         return sets
 

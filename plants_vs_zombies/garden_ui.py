@@ -20,6 +20,8 @@ PLANT_NAMES = {
     "sunflower": "向日葵", "peashooter": "豌豆射手", "wallnut": "坚果墙",
     "snowpea": "寒冰射手", "cherrybomb": "樱桃炸弹", "repeater": "双发射手",
     "threepeater": "三线射手", "potatomine": "土豆地雷", "jalapeno": "火爆辣椒",
+    "puffshroom": "小喷菇", "sunshroom": "阳光菇", "scaredyshroom": "胆小菇",
+    "chomper": "大嘴花", "squash": "窝瓜", "spikeweed": "地刺", "iceshroom": "寒冰菇",
 }
 LEVEL_POINTS = ((109, 235), (260, 232), (410, 255), (365, 356),
                 (210, 364), (115, 471), (394, 474))
@@ -31,7 +33,7 @@ def mode_rect(index):
 
 
 def level_rect(index):
-    x, y = LEVEL_POINTS[index]
+    x, y = LEVEL_POINTS[index % len(LEVEL_POINTS)]
     return pygame.Rect(x - 39, y - 33, 78, 66)
 
 
@@ -40,6 +42,14 @@ CHOOSER_BACK_RECT = pygame.Rect(645, 25, 126, 40)
 CHOOSER_START_RECT = pygame.Rect(581, 477, 170, 44)
 RESULT_PRIMARY_RECT = pygame.Rect(247, 508, 305, 44)
 RESULT_MAP_RECT = pygame.Rect(577, 508, 118, 44)
+MAP_PREV_RECT = pygame.Rect(171, 25, 85, 34)
+MAP_NEXT_RECT = pygame.Rect(560, 25, 85, 34)
+SEED_PREV_RECT = pygame.Rect(46, 159, 70, 32)
+SEED_NEXT_RECT = pygame.Rect(448, 159, 70, 32)
+PAUSE_BUTTON_RECT = pygame.Rect(678, 570, 110, 27)
+PAUSE_RESUME_RECT = pygame.Rect(255, 300, 290, 48)
+PAUSE_MENU_RECT = pygame.Rect(255, 375, 290, 43)
+SHOVEL_RECT = pygame.Rect(730, 8, 58, 72)
 
 
 class GardenUI:
@@ -183,6 +193,7 @@ class GardenUI:
         progress_label = "冒险已通关 · 进入地图重玩" if g.adventure_completed() else f"继续闯关 · {C.LEVELS[index]['id']}"
         self.text(progress_label, (572, 393), 16,
                   (214, 215, 188), outline=(63, 68, 65))
+        self.button(g.almanac.menu_rect, "植物与僵尸图鉴 [I]", "stone", size=21)
         self.panel(pygame.Rect(38, 498, 312, 61), "wood")
         self.text("你的庭院，等你来守护", (194, 518), 19, bold=True, outline=(35, 28, 14))
         self.text("Enter 冒险  ·  F 全屏  ·  Esc 退出", (194, 543), 13)
@@ -198,11 +209,13 @@ class GardenUI:
         self.canvas.blit(art, (0, 0)) if art else self.canvas.fill(GREEN)
         self.shade(122)
         self.button(BACK_RECT, "‹ 返回庭院")
+        self.button(MAP_PREV_RECT, "‹ 上一页", enabled=g.level_page > 0, size=14)
+        self.button(MAP_NEXT_RECT, "下一页 ›", enabled=g.level_page < (len(C.LEVELS) - 1) // 7, size=14)
         self.text("庭院冒险地图", (411, 61), 32, bold=True, outline=(28, 37, 17))
         done = sum(self.completed(i) for i in range(len(C.LEVELS)))
-        self.text(f"已通关 {done} / {len(C.LEVELS)}  ·  点击已解锁的路标出发", (410, 100), 16)
+        self.text(f"已通关 {done}/{len(C.LEVELS)}  ·  第 {g.level_page + 1}/{(len(C.LEVELS) + 6) // 7} 页  ·  ← → 翻页", (410, 100), 16)
         self.panel(pygame.Rect(27, 126, 497, 423))
-        self.text("前院 · 阳光下的防线", (275, 159), 19, GREEN, bold=True)
+        self.text("前院 · 阳光下的防线" if g.level_page == 0 else "夜战续篇 · 蘑菇的力量", (275, 159), 19, GREEN, bold=True)
         pygame.draw.lines(self.canvas, (151, 124, 77), False, LEVEL_POINTS, 17)
         pygame.draw.lines(self.canvas, (199, 174, 119), False, LEVEL_POINTS, 11)
         # Pebbled trail connects the same rects used by the controller.
@@ -214,9 +227,11 @@ class GardenUI:
                 pygame.draw.ellipse(self.canvas, (224, 204, 157), (x - 4, y - 2, 8, 4))
         # The moonlit part of the map is separate from the daytime chapter.
         pygame.draw.line(self.canvas, (179, 151, 103), (55, 416), (495, 416), 1)
-        self.text("后院 · 月光下的挑战", (277, 430), 17, (74, 76, 91), bold=True)
-        focus = min(g.unlocked, len(C.LEVELS) - 1)
-        for i, lv in enumerate(C.LEVELS):
+        self.text("后院 · 月光下的挑战" if g.level_page == 0 else "伏击与陷阱 · 月夜终章", (277, 430), 17, (74, 76, 91), bold=True)
+        visible = list(g.visible_levels())
+        focus = max(visible[0], min(g.unlocked, visible[-1]))
+        for i in visible:
+            lv = C.LEVELS[i]
             rect = level_rect(i)
             locked = i > g.unlocked
             hovered = self.hover(rect)
@@ -249,6 +264,7 @@ class GardenUI:
         self.text(lv["name"], (655, 313), 18, INK, bold=True)
         self.text(f"{lv['rows']} 行草坪  ·  {len(lv['waves'])} 波僵尸", (655, 343), 16, INK)
         self.text(f"初始阳光  {lv['sun']}", (655, 370), 16, INK)
+        self.text(lv.get("rule", ""), (655, 390), 13, (143, 64, 35))
         reward = C.LEVEL_REWARDS[index]
         self.text("冒险通关奖励", (652, 408), 15, (116, 80, 36))
         frames = g.assets.plant(C.PLANTS[reward]["sprite"])
@@ -288,12 +304,17 @@ class GardenUI:
         self.text("挑选你的防守阵容", (661, 112), 20, bold=True, outline=(25, 39, 18))
         self.panel(pygame.Rect(C.CHOOSER_PANEL_X, C.CHOOSER_PANEL_Y,
                                C.CHOOSER_PANEL_W, C.CHOOSER_PANEL_H))
-        self.text("植物种子册", (283, 177), 24, GREEN, bold=True)
+        self.text(f"种子册 {g.seed_page + 1}/{(len(C.SHOP_ORDER) + 9) // 10}", (283, 177), 24, GREEN, bold=True)
+        self.button(SEED_PREV_RECT, "‹ 上页", enabled=g.seed_page > 0, size=14)
+        self.button(SEED_NEXT_RECT, "下页 ›", enabled=g.seed_page < (len(C.SHOP_ORDER) - 1) // 10, size=14)
         pool = g.available_plants()
-        ordered = pool + [k for k in C.SHOP_ORDER if k not in pool]
+        ordered = g.visible_seeds()
+        hovered_kind = None
         for i, kind in enumerate(ordered):
             rect = g._chooser_rect(i)
             locked, picked = kind not in pool, kind in g.seeds
+            if self.hover(rect):
+                hovered_kind = kind
             card = g.assets.card(C.PLANTS[kind]["card"])
             if card:
                 if locked or picked:
@@ -313,37 +334,47 @@ class GardenUI:
             self.text(PLANT_NAMES[kind], (rect.centerx, rect.bottom + 15), 14,
                       (135, 121, 95) if locked else INK)
         pygame.draw.line(self.canvas, (193, 166, 111), (47, 459), (515, 459), 1)
-        self.text("点击种子卡加入，再次点击可取消", (281, 491), 17, INK)
-        self.text("A 快速选满  ·  Enter 开始  ·  上方卡槽可移除", (281, 522), 14, (123, 98, 60))
+        if hovered_kind:
+            spec = C.PLANTS[hovered_kind]
+            self.text(f"{PLANT_NAMES[hovered_kind]} · {spec['cost']}阳光 · 冷却{spec['recharge']:g}秒", (281, 479), 15, INK)
+            self.text(C.PLANT_HELP.get(hovered_kind, "点击加入阵容，再次点击取消"), (281, 501), 13, INK)
+        else:
+            self.text("鼠标停在卡片上查看植物能力", (281, 489), 16, INK)
+        self.text("← → 翻页  ·  A 选满  ·  Enter 开始  ·  点击上方移除", (281, 531), 13, (123, 98, 60))
         self.panel(pygame.Rect(552, 145, 221, 410))
         self.text("出发准备", (662, 176), 23, GREEN, bold=True)
         self.text(f"{g.rows} 行防线 / {len(g.waves)} 波进攻", (662, 213), 16, INK)
-        self.text("本关来袭", (662, 250), 16, (121, 86, 44))
-        kinds = list(dict.fromkeys(kind for wave in g.waves for kind, _ in wave))
+        for i, line in enumerate(g.level.get("brief", ())):
+            self.text(line, (662, 239 + 21 * i), 13, INK)
+        self.text("本关来袭", (662, 287), 15, (121, 86, 44))
+        kinds = list(dict.fromkeys(entry[0] for wave in g.waves for entry in wave))
         for i, kind in enumerate(kinds):
             frames = g.assets.zombie(kind)["walk"]
             if frames:
                 sprite = frames[0]
-                scale = min(52 / sprite.get_width(), 83 / sprite.get_height())
+                slot_w = 198 / max(1, len(kinds))
+                scale = min((slot_w - 5) / sprite.get_width(), 73 / sprite.get_height())
                 image = self.scaled(sprite, (int(sprite.get_width() * scale), int(sprite.get_height() * scale)))
-                self.canvas.blit(image, image.get_rect(midbottom=(595 + i * 64, 351)))
-        self.text(f"已选 {len(g.seeds)} / {target} 张", (662, 388), 24, GREEN, bold=True)
+                x = 563 + slot_w * (i + 0.5)
+                self.canvas.blit(image, image.get_rect(midbottom=(round(x), 365)))
+                self.text(C.ZOMBIE_NAMES[kind], (round(x), 378), 11, INK)
+        self.text(f"已选 {len(g.seeds)} / {target} 张", (662, 405), 24, GREEN, bold=True)
         ready = len(g.seeds) == target
-        self.text("阵容就绪，守住庭院！" if ready else f"再选择 {target - len(g.seeds)} 张植物", (662, 423), 15, INK)
+        self.text("阵容就绪，守住庭院！" if ready else f"再选择 {target - len(g.seeds)} 张植物", (662, 442), 15, INK)
         self.button(CHOOSER_START_RECT, "开始战斗！", enabled=ready, size=23)
         self.text("后续植物通过冒险解锁", (662, 538), 13, (122, 98, 62))
 
     def draw_wave(self):
         g = self.game
         # An independent compact wooden HUD leaves the eight seed slots free.
-        panel = pygame.Rect(550, 5, 237, 79)
+        panel = pygame.Rect(550, 5, 173, 79)
         self.panel(panel, "wood")
         final = g.wave_index == len(g.waves) - 1 and g.wave_timer >= 0
         self.text(f"{g.level['id']}  " + ("最后一波！" if final else "关卡进度"),
                   (562, 12), 13, (247, 196, 108) if final else CREAM, center=False)
         wave = min(g.wave_index + 1, len(g.waves))
-        self.text(f"{wave}/{len(g.waves)} 波", (770, 18), 13)
-        track = pygame.Rect(568, 48, 194, 16)
+        self.text(f"{wave}/{len(g.waves)} 波", (691, 18), 12)
+        track = pygame.Rect(565, 54, 140, 15)
         pygame.draw.rect(self.canvas, (38, 31, 20), track.inflate(6, 6), border_radius=8)
         pygame.draw.rect(self.canvas, (181, 148, 81), track.inflate(4, 4), 1, border_radius=7)
         pygame.draw.rect(self.canvas, (68, 74, 35), track, border_radius=6)
@@ -360,10 +391,10 @@ class GardenUI:
         for wave in g.waves:
             cumulative += len(wave)
             x = track.x + round(track.w * cumulative / total)
-            pygame.draw.line(self.canvas, (231, 215, 165), (x, 44), (x, 63), 2)
+            pygame.draw.line(self.canvas, (231, 215, 165), (x, 50), (x, 69), 2)
             flag = g.assets.misc("wave_flag")
             if flag:
-                self.canvas.blit(flag, (x - 23, 30))
+                self.canvas.blit(flag, (x - 23, 36))
         head = g.assets.misc("wave_head")
         x = track.x + round(track.w * frac)
         if head:
@@ -405,4 +436,119 @@ class GardenUI:
                 self.text(spec["cost"], cost_rect.center, 12, (45, 49, 36), bold=True)
             if g.selected == kind:
                 pygame.draw.rect(self.canvas, (249, 224, 110), rect.inflate(4, 4), 2, border_radius=3)
+            if cooling:
+                self.text(f"{math.ceil(g.cooldowns[kind])}s", rect.center, 17,
+                          outline=(30, 30, 25), bold=True)
             self.text(i + 1, (rect.x + 5, rect.y + 1), 13, center=False, outline=(40, 32, 22), bold=True)
+        self.panel(SHOVEL_RECT, 'wood', g.drag_kind == 'shovel')
+        icon = self.shovel_image()
+        self.canvas.blit(self.scaled(icon, (43, 43)), (SHOVEL_RECT.x + 8, SHOVEL_RECT.y + 3))
+        self.text('铲子', (SHOVEL_RECT.centerx, SHOVEL_RECT.bottom - 15), 14)
+
+    def pointer_pos(self):
+        g = self.game
+        return g.drag_pos if g.drag_pos is not None else g._to_canvas(pygame.mouse.get_pos())
+
+    def shovel_image(self):
+        key = 'shovel'
+        if key not in self.images:
+            source = self.game.assets.misc('shovel')
+            icon = pygame.Surface((64, 64), pygame.SRCALPHA)
+            if source is not None:
+                source = source.subsurface(source.get_bounding_rect()).copy()
+                scale = min(64 / source.get_width(), 64 / source.get_height())
+                size = (round(source.get_width() * scale), round(source.get_height() * scale))
+                art = self.scaled(source, size)
+                icon.blit(art, art.get_rect(center=(32, 32)))
+            self.images[key] = icon
+        return self.images[key]
+
+    def draw_drag_cursor(self):
+        g = self.game
+        if g.drag_kind is None or g.drag_pos is None:
+            return
+        x, y = map(round, g.drag_pos)
+        if g.drag_kind == 'shovel':
+            # The original shovel points down-left; keep its blade under the cursor.
+            self.canvas.blit(self.shovel_image(), (x - 12, y - 55))
+        else:
+            frames = g.assets.plant(C.PLANTS[g.drag_kind]['sprite'])
+            if frames:
+                image = frames[0].copy()
+                image.set_alpha(210)
+                self.canvas.blit(image, image.get_rect(center=(x, y)))
+
+    def draw_placement(self):
+        g = self.game
+        for row in range(g.rows):
+            self.text(row + 1, (20, C.LAWN_Y + row * C.CELL_H + 50),
+                      14, outline=(25, 40, 20))
+        shoveling = g.drag_kind == 'shovel'
+        if g.selected is None and not shoveling:
+            return
+        overlay = pygame.Surface((800, 600), pygame.SRCALPHA)
+        for row in range(g.rows):
+            for col in range(C.GRID_COLS):
+                rect = pygame.Rect(C.LAWN_X + col * C.CELL_W,
+                                   C.LAWN_Y + row * C.CELL_H, C.CELL_W, C.CELL_H)
+                pygame.draw.rect(overlay, (235, 245, 190, 65), rect, 1)
+        cell = g.lawn_cell(self.pointer_pos())
+        if cell is not None:
+            col, row = cell
+            rect = pygame.Rect(C.LAWN_X + col * C.CELL_W,
+                               C.LAWN_Y + row * C.CELL_H, C.CELL_W, C.CELL_H)
+            valid = bool(g.plant_at(*cell)) if shoveling else not g.planting_error(cell)
+            color = (110, 220, 90) if valid else (245, 95, 65)
+            pygame.draw.rect(overlay, (*color, 65), rect)
+            pygame.draw.rect(overlay, (*color, 220), rect, 2)
+            frames = g.assets.plant(C.PLANTS[g.selected]["sprite"]) if g.selected and g.drag_kind is None else []
+            if frames:
+                ghost = frames[0].copy()
+                ghost.set_alpha(140)
+                overlay.blit(ghost, ghost.get_rect(midbottom=(rect.centerx,
+                             rect.y + C.PLANT_BASELINE)))
+        self.canvas.blit(overlay, (0, 0))
+
+    def draw_battle_info(self):
+        g = self.game
+        # Warn of imminent lane entries without covering the planting cells.
+        for row in {row for _, delay, row in g.spawn_queue
+                    if 0 <= delay - g.wave_timer <= 5}:
+            y = C.LAWN_Y + row * C.CELL_H + 40
+            pygame.draw.polygon(self.canvas, (255, 181, 66),
+                                [(790, y - 10), (776, y), (790, y + 10)])
+        wave = min(g.wave_index, len(g.waves) - 1)
+        names = g.level.get("wave_names", [])
+        name = names[wave] if wave < len(names) else f"第 {wave + 1} 波"
+        text = f"{name}  ·  {g.level.get('rule', '')}"
+        if g.drag_kind == 'shovel':
+            cell = g.lawn_cell(self.pointer_pos())
+            plant = g.plant_at(*cell) if cell else None
+            text = f"松手铲除{PLANT_NAMES[plant.kind]} · 不返还阳光" if plant else '拖到植物上松手铲除，右键或 Esc 取消'
+        elif g.selected:
+            cell = g.lawn_cell(self.pointer_pos())
+            if cell:
+                hint = g.planting_error(cell)
+            else:
+                hint = '拖到草坪，松手种植' if g.drag_kind else '点击草坪种植'
+            text = f"{PLANT_NAMES[g.selected]} · {hint or ('松手种植，右键取消' if g.drag_kind else '这里可以种植')}"
+        elif g.wave_timer < 0:
+            text += f"  ·  下一波 {math.ceil(-g.wave_timer)} 秒"
+        else:
+            text += "  ·  拖卡种植 / 点击收集阳光"
+        if g.notice_timer > 0:
+            text = g.notice
+        panel = pygame.Surface((650, 27), pygame.SRCALPHA)
+        panel.fill((20, 29, 18, 205))
+        self.canvas.blit(panel, (10, 570))
+        self.text(text, (335, 583), 14, (255, 225, 150) if g.notice_timer > 0 else CREAM)
+        self.button(PAUSE_BUTTON_RECT, '暂停 [P]', size=14)
+
+    def draw_pause(self):
+        self.shade(160)
+        self.panel(pygame.Rect(150, 165, 500, 325))
+        self.text('防线已暂停', (400, 218), 32, GREEN, bold=True)
+        self.text('阳光、冷却和敌人都会停在当前进度', (400, 265), 17, INK)
+        self.button(PAUSE_RESUME_RECT, '继续战斗  [P / Enter]', size=22)
+        self.button(PAUSE_MENU_RECT, '结束本局，返回庭院', size=19)
+        self.text('I 查看图鉴  ·  Esc 继续  ·  F 全屏', (400, 455), 15, INK)

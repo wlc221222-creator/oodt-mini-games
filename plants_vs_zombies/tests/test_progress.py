@@ -24,7 +24,7 @@ def main():
     pool = game.available_plants()
     print("level 1 pool:", pool, "rows:", game.rows)
     assert pool == C.START_PLANTS, "level 1 should only offer starting plants"
-    assert game.rows == 3, "level 1 should have 3 lanes"
+    assert game.rows == 5, "all five visible lanes must be plantable"
 
     # The start gate needs all owned seeds, up to MAX_SEEDS.
     game.seeds = ["sunflower"]
@@ -41,10 +41,10 @@ def main():
     assert game.unlocked >= 1, "level 1 win should unlock level 2"
     assert C.LEVEL_REWARDS[0] in game.owned_plants, "no plant reward granted"
 
-    # Level 2 has a wider lawn than level 1.
+    # Later levels retain all five lanes.
     game.start_level(1, "adventure")
     print("level 2 rows:", game.rows)
-    assert game.rows >= 3
+    assert game.rows == 5
 
     if os.path.exists(savegame.SAVE_PATH):
         os.remove(savegame.SAVE_PATH)

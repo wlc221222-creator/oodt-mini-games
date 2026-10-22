@@ -26,6 +26,7 @@ def place(game, kind, col, row):
     x = C.LAWN_X + col * C.CELL_W + C.CELL_W // 2
     y = C.LAWN_Y + row * C.CELL_H + C.CELL_H // 2
     game._on_click((x, y))
+    return game.plant_at(col, row) is not None
 
 
 # A fixed, sensible layout the bot builds toward: two sunflowers for early
@@ -42,7 +43,7 @@ def build_order(rows):
 
 def run_headless(max_seconds=200.0):
     game = Game()
-    # Adventure level 1: 3 rows, starting plants only.
+    # Adventure level 1: five visible rows. This smoke bot uses all test plants.
     game.owned_plants = list(C.SHOP_ORDER)
     game.start_level(0, "adventure")
     game.seeds = list(C.SHOP_ORDER)[:C.MAX_SEEDS]
@@ -56,8 +57,8 @@ def run_headless(max_seconds=200.0):
         if todo and i % 20 == 0:
             kind, col, row = todo[0]
             if game.sun >= C.PLANTS[kind]["cost"] and game.plant_at(col, row) is None:
-                place(game, kind, col, row)
-                todo.pop(0)
+                if place(game, kind, col, row):
+                    todo.pop(0)
         # Auto-collect suns so the economy keeps moving.
         for s in game.suns:
             if s.y > 0:

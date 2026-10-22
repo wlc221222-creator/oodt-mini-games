@@ -1,9 +1,9 @@
-"""Entry point for the Defend the Carrot MVP.
+"""Entry point for the Defend the Carrot adventure.
 
     python main.py
 
-Keys: 1-3 select a fruit, left click places it on the grass, right click
-cancels, R restarts after a win or loss, Esc quits.
+Keys: Enter continues, L selects a stage, 1-8 selects a tower, U upgrades,
+Delete sells, Tab changes speed, I opens the guide, P pauses, Esc goes back.
 """
 
 import sys
@@ -23,15 +23,32 @@ def self_test(report_path: str) -> int:
         import pygame
         import config as C
         from game import Game
+        from art import (CHARACTERS, WALK_FRAMES, ATTACK_FRAMES, CARROT_HEALTH_FRAMES,
+                         character_image, atlas_frame)
         game = Game()
+        for kind in CHARACTERS:
+            assert character_image(kind) is not None, kind
+        for frame in CARROT_HEALTH_FRAMES.values():
+            assert character_image('carrot', frame=frame) is not None, frame
+        for kind, frames in {**WALK_FRAMES, **ATTACK_FRAMES}.items():
+            for frame in frames:
+                for tier in ((1, 2, 3) if kind in ATTACK_FRAMES else (1,)):
+                    assert character_image(kind, frame=frame, level=tier) is not None, (kind, frame, tier)
+        for theme in (1, 2, 3):
+            assert atlas_frame(f'Themes/Theme{theme}/BG0/BG1-hd', 'BG1.png') is not None
+            assert atlas_frame(f'Themes/Theme{theme}/BG1/BG-hd', 'Path.png') is not None
+        assert game.state == "menu"
+        game.draw()
+        game.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
+        game.reset(0)
         game.coins = 1000
-        for kind in C.SHOP_ORDER:
+        for kind in game.available_towers:
             col, row = next((col, row) for row in range(C.GRID_ROWS)
                             for col in range(C.GRID_COLS) if game.can_build(col, row))
             game.selected = kind
             game._on_click((col * C.TILE + C.TILE // 2,
                             C.HUD_H + row * C.TILE + C.TILE // 2))
-        assert len(game.fruits) == len(C.SHOP_ORDER)
+        assert len(game.fruits) == len(game.available_towers)
         for _ in range(180):
             game.update(1 / C.FPS)
             game.draw()

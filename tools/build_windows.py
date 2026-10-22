@@ -23,7 +23,7 @@ def main():
                 "--name", name, "--paths", str(ROOT / folder),
                 "--distpath", str(dist), "--workpath", str(ROOT / "build" / name),
                 "--specpath", str(ROOT / "build")]
-        if folder == "plants_vs_zombies":
+        if (ROOT / folder / "assets").is_dir():
             args += ["--add-data", str(ROOT / folder / "assets") + os.pathsep + "assets"]
         args.append(str(ROOT / folder / "main.py"))
         PyInstaller.__main__.run(args)
