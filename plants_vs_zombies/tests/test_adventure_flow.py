@@ -78,7 +78,7 @@ def main():
             key(resumed, pygame.K_ESCAPE)
             key(resumed, pygame.K_RETURN)
             assert resumed.state == "choosing", "menu Enter must not skip seed selection"
-            print("PASS: 1-1 to 2-2 progression, next-level click/Enter, rewards, retries and save resume")
+            print(f"PASS: 1-1 to {C.LEVELS[-1]['id']} progression, next-level click/Enter, rewards, retries and save resume")
     finally:
         save.SAVE_PATH = original_path
         pygame.quit()

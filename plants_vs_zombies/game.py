@@ -21,9 +21,14 @@ import pygame
 import config as C
 import save as savegame
 from assets import get_assets
+from almanac import Almanac
+from newplants import NEW_PLANT_CLASSES
 from garden_ui import (GardenUI, mode_rect, level_rect, BACK_RECT,
                        CHOOSER_BACK_RECT, CHOOSER_START_RECT,
-                       RESULT_PRIMARY_RECT, RESULT_MAP_RECT, PLANT_NAMES)
+                       RESULT_PRIMARY_RECT, RESULT_MAP_RECT, PLANT_NAMES,
+                       MAP_PREV_RECT, MAP_NEXT_RECT, SEED_PREV_RECT, SEED_NEXT_RECT,
+                       PAUSE_BUTTON_RECT, PAUSE_RESUME_RECT, PAUSE_MENU_RECT,
+                       SHOVEL_RECT)
 from entities import (
     CherryBomb, Explosion, Jalapeno, LaneFire, Peashooter, Plant, PotatoMine,
     Projectile, Repeater, SnowPea, Sun, Sunflower, Threepeater, WallNut,
@@ -41,6 +46,7 @@ PLANT_CLASSES = {
     "potatomine": PotatoMine,
     "jalapeno": Jalapeno,
 }
+PLANT_CLASSES.update(NEW_PLANT_CLASSES)
 
 
 def load_font(size: int) -> pygame.font.Font:
@@ -80,6 +86,7 @@ class Game:
         # window, so fullscreen and resizing need no coordinate changes.
         self.canvas = pygame.Surface((C.SCREEN_W, C.SCREEN_H)).convert()
         self.ui = GardenUI(self, load_font)
+        self.almanac = Almanac(self)
         self.fullscreen = False
         self._load_progress()
 
@@ -88,12 +95,23 @@ class Game:
     # ------------------------------------------------------------ progression
     def _load_progress(self) -> None:
         data = savegame.load()
-        self.unlocked = max(0, min(int(data.get("unlocked", 0)), len(C.LEVELS) - 1))
+        try:
+            self.unlocked = max(0, min(int(data.get("unlocked", 0)), len(C.LEVELS) - 1))
+        except (ValueError, TypeError):
+            self.unlocked = 0
         earned = data.get("plants", [])
+        if not isinstance(earned, list):
+            earned = []
         self.owned_plants = list(C.START_PLANTS)
         for name in earned:
-            if name in C.PLANTS and name not in self.owned_plants:
+            if isinstance(name, str) and name in C.PLANTS and name not in self.owned_plants:
                 self.owned_plants.append(name)
+        # Legacy completed saves capped unlocked at 6. Earned rewards prove
+        # completion and open the appended levels without replaying old ones.
+        for index, reward in enumerate(C.LEVEL_REWARDS):
+            if reward not in self.owned_plants:
+                break
+            self.unlocked = max(self.unlocked, min(index + 1, len(C.LEVELS) - 1))
 
     def _save_progress(self) -> None:
         savegame.save({"unlocked": self.unlocked, "plants": self.owned_plants})
@@ -145,6 +163,8 @@ class Game:
         self.rows = self.level["rows"]
         self.sun = self.level["sun"]
         self.selected: Optional[str] = None
+        self.drag_kind: Optional[str] = None
+        self.drag_pos = None
         self.sky_sun_timer = C.SKY_SUN_INTERVAL
         self.wave_index = 0
         self.wave_timer = 0.0
@@ -156,6 +176,11 @@ class Game:
         self.mode = "adventure"      # adventure | select
         self.seeds: List[str] = []
         self.elapsed = 0.0
+        self.level_page = self.unlocked // 7
+        self.seed_page = 0
+        self.frost_timer = 0.0
+        self.notice = ""
+        self.notice_timer = 0.0
         self._load_wave(0)
 
     def start_level(self, index: int, mode: str) -> None:
@@ -172,10 +197,17 @@ class Game:
         self.effects = []
         self.sun = self.level["sun"]
         self.selected = None
+        self.drag_kind = None
+        self.drag_pos = None
         self.sky_sun_timer = C.SKY_SUN_INTERVAL
         self.wave_index = 0
         self.wave_timer = 0.0
         self.elapsed = 0.0
+        self.level_page = self.level_index // 7
+        self.seed_page = 0
+        self.frost_timer = 0.0
+        self.notice = ""
+        self.notice_timer = 0.0
         self.cooldowns = {k: 0.0 for k in C.PLANTS}
         self._load_wave(0)
         self.state = "choosing"
@@ -214,21 +246,40 @@ class Game:
         """Plants the player owns, in shop order."""
         return [k for k in C.SHOP_ORDER if k in self.owned_plants]
 
+    def seed_catalog(self):
+        pool = self.available_plants()
+        return pool + [kind for kind in C.SHOP_ORDER if kind not in pool]
+
+    def visible_seeds(self):
+        start = self.seed_page * 10
+        return self.seed_catalog()[start:start + 10]
+
+    def visible_levels(self):
+        start = self.level_page * 7
+        return range(start, min(start + 7, len(C.LEVELS)))
+
+    def turn_page(self, direction):
+        if self.state == "choosing":
+            self.seed_page = max(0, min(self.seed_page + direction, (len(C.SHOP_ORDER) - 1) // 10))
+        elif self.state == "levelselect":
+            self.level_page = max(0, min(self.level_page + direction, (len(C.LEVELS) - 1) // 7))
+
     def _load_wave(self, index: int) -> None:
         if index >= len(self.waves):
             return
-        # Assign rows round-robin so no single lane gets piled on. This keeps
-        # each wave fair and makes the balance predictable for the demo.
+        # Authored lanes distinguish pincer attacks from concentrated pushes.
+        # Two-item entries remain supported for older custom levels.
         self.spawn_queue = []
         offset = (index * 2) % self.rows
-        for i, (kind, delay) in enumerate(self.waves[index]):
-            row = (offset + i) % self.rows
+        for i, entry in enumerate(self.waves[index]):
+            kind, delay = entry[:2]
+            row = entry[2] if len(entry) == 3 else (offset + i) % self.rows
             self.spawn_queue.append([kind, delay, row])
         self.wave_timer = 0.0
 
     # --------------------------------------------------------------- helpers
     def lane_has_zombie(self, row: int, from_x: float) -> bool:
-        return any(z.alive and z.row == row and z.x > from_x for z in self.zombies)
+        return any(z.alive and not z.dying and z.row == row and z.x > from_x for z in self.zombies)
 
     def plant_in_front(self, row: int, zombie_x: float) -> Optional[Plant]:
         # A zombie only eats a plant it has actually walked up to. Without the
@@ -236,7 +287,7 @@ class Game:
         # its lane from across the whole board and chew it down from range.
         best = None
         for p in self.plants:
-            if (p.row == row and p.alive and p.x <= zombie_x + 6
+            if (p.row == row and p.alive and getattr(p, "edible", True) and p.x <= zombie_x + 6
                     and zombie_x - p.x <= C.CELL_W * 0.55):
                 if best is None or p.x > best.x:
                     best = p
@@ -252,13 +303,16 @@ class Game:
         self.suns.append(Sun(x, y, amount, falls=falls))
 
     def on_zombie_reached_house(self) -> None:
+        self.cancel_drag()
         self.state = "lost"
 
     # ---------------------------------------------------------------- update
     def update(self, dt: float) -> None:
-        if self.state != "playing":
+        if self.state != "playing" or self.almanac.opened:
             return
         self.elapsed += dt
+        self.frost_timer = max(0.0, self.frost_timer - dt)
+        self.notice_timer = max(0.0, self.notice_timer - dt)
 
         # Tick down every card cooldown.
         for kind, t in self.cooldowns.items():
@@ -266,18 +320,20 @@ class Game:
                 self.cooldowns[kind] = max(0.0, t - dt)
 
         # Sky sun.
-        self.sky_sun_timer -= dt
-        if self.sky_sun_timer <= 0:
-            self.sky_sun_timer = C.SKY_SUN_INTERVAL
-            x = random.uniform(C.LAWN_X, C.LAWN_X + C.LAWN_W)
-            self.spawn_sun(x, -20, C.SKY_SUN_AMOUNT, falls=True)
+        if self.level.get("sky_sun", True):
+            self.sky_sun_timer -= dt
+            if self.sky_sun_timer <= 0:
+                self.sky_sun_timer = C.SKY_SUN_INTERVAL
+                x = random.uniform(C.LAWN_X + 25, C.LAWN_X + C.LAWN_W - 25)
+                self.spawn_sun(x, -20, C.SKY_SUN_AMOUNT, falls=True)
 
         self._update_waves(dt)
 
         for group in (self.plants, self.zombies, self.projectiles,
                       self.suns, self.explosions, self.effects):
             for e in group:
-                e.update(dt, self)
+                if e.alive:
+                    e.update(dt, self)
 
         self._reap()
         self._check_victory()
@@ -289,17 +345,23 @@ class Game:
         pending = []
         for kind, delay, row in self.spawn_queue:
             if self.wave_timer >= delay:
-                self.zombies.append(Zombie(C.SCREEN_W + 30, row, kind))
+                zombie = Zombie(C.SCREEN_W + 30, row, kind)
+                zombie.speed *= self.level.get("speed_multiplier", 1.0)
+                self.zombies.append(zombie)
             else:
                 pending.append([kind, delay, row])
         self.spawn_queue = pending
 
         if not self.spawn_queue and not self.zombies:
+            bonus = self.level.get("wave_bonus", 0)
+            if bonus:
+                self.sun += bonus
+                self.show_notice(f"本波清空！补给 +{bonus} 阳光")
             # Wave cleared: advance after a short breather.
             self.wave_index += 1
             if self.wave_index < len(self.waves):
                 self._load_wave(self.wave_index)
-                self.wave_timer = -C.WAVE_BREAK
+                self.wave_timer = -self.level.get("wave_break", C.WAVE_BREAK)
 
     def _reap(self) -> None:
         for name in ("plants", "zombies", "projectiles", "suns", "explosions",
@@ -309,6 +371,7 @@ class Game:
 
     def _check_victory(self) -> None:
         if self.state == "playing" and self.wave_index >= len(self.waves) and not self.zombies:
+            self.cancel_drag()
             self.state = "won"
             self._on_level_won()
 
@@ -351,6 +414,7 @@ class Game:
 
     # ----------------------------------------------------------------- input
     def toggle_fullscreen(self) -> None:
+        self.cancel_drag()
         self.fullscreen = not self.fullscreen
         if self.fullscreen:
             self.screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
@@ -359,14 +423,56 @@ class Game:
                                                   pygame.RESIZABLE)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        if event.type == pygame.WINDOWFOCUSLOST:
+            self.cancel_drag()
+            return
         if event.type == pygame.VIDEORESIZE and not self.fullscreen:
+            self.cancel_drag()
             self.windowed_size = (max(400, event.w), max(300, event.h))
             self.screen = pygame.display.set_mode(self.windowed_size,
                                                   pygame.RESIZABLE)
             return
 
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_i:
+            self.cancel_drag()
+            self.almanac.opened = not self.almanac.opened
+            return
+        if self.almanac.opened:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_f:
+                self.toggle_fullscreen()
+            else:
+                pos = self._to_canvas(event.pos) if hasattr(event, 'pos') else None
+                self.almanac.handle_event(event, pos)
+            return
+
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_p:
+            self.cancel_drag()
+            if self.state in ("playing", "paused"):
+                self.state = "paused" if self.state == "playing" else "playing"
+            return
+        if self.state == "paused":
+            if event.type == pygame.KEYDOWN:
+                if event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                    self.state = "playing"
+                elif event.key == pygame.K_f:
+                    self.toggle_fullscreen()
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = self._to_canvas(event.pos)
+                if PAUSE_RESUME_RECT.collidepoint(pos):
+                    self.state = "playing"
+                elif PAUSE_MENU_RECT.collidepoint(pos):
+                    self.state = "menu"
+                    self.selected = None
+            return
+
         if event.type == pygame.KEYDOWN:
+            if event.key in (pygame.K_LEFT, pygame.K_RIGHT) and self.state in ("choosing", "levelselect"):
+                self.turn_page(-1 if event.key == pygame.K_LEFT else 1)
+                return
             if event.key == pygame.K_ESCAPE:
+                if self.drag_kind is not None:
+                    self.cancel_drag()
+                    return
                 if self.fullscreen:
                     self.toggle_fullscreen()
                     return
@@ -400,7 +506,19 @@ class Game:
                 if event.key in keys:
                     idx = keys.index(event.key)
                     if idx < len(self.seeds):
+                        self.cancel_drag()
                         self.selected = self.seeds[idx]
+
+        if event.type == pygame.MOUSEMOTION and self.drag_kind is not None:
+            if hasattr(event, 'buttons') and not event.buttons[0]:
+                self.cancel_drag()
+            else:
+                self.drag_pos = self._to_canvas(event.pos)
+            return
+        if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            if self.drag_kind is not None:
+                self.finish_drag(self._to_canvas(event.pos))
+            return
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.state == "menu":
@@ -415,15 +533,84 @@ class Game:
             if self.state == "choosing":
                 self._on_choose_click(self._to_canvas(event.pos))
                 return
+            if self.state == "playing":
+                if self.drag_kind is not None:
+                    return
+                pos = self._to_canvas(event.pos)
+                if SHOVEL_RECT.collidepoint(pos):
+                    self.selected = None
+                    self.notice_timer = 0.0
+                    self.drag_kind, self.drag_pos = 'shovel', pos
+                    return
+                for i, kind in enumerate(self.seeds):
+                    if self._card_rect(i).collidepoint(pos):
+                        self.begin_plant_drag(kind, pos)
+                        return
             self._on_click(self._to_canvas(event.pos))
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+            self.cancel_drag()
             self.selected = None
 
+    def cancel_drag(self):
+        if self.drag_kind is not None:
+            self.selected = None
+        self.drag_kind = None
+        self.drag_pos = None
+
+    def card_error(self, kind):
+        remaining = self.cooldowns.get(kind, 0.0)
+        if remaining > 0:
+            return f"卡片冷却中，还需 {remaining:.1f} 秒"
+        cost = C.PLANTS[kind]['cost']
+        if self.sun < cost:
+            return f"阳光不足，还差 {cost - self.sun}"
+        return ""
+
+    def begin_plant_drag(self, kind, pos):
+        self.cancel_drag()
+        self.selected = None
+        if kind not in self.seeds:
+            return
+        reason = self.card_error(kind)
+        if reason:
+            self.show_notice(reason)
+            return
+        self.selected = self.drag_kind = kind
+        self.drag_pos = pos
+        self.notice_timer = 0.0
+
+    def finish_drag(self, pos):
+        kind = self.drag_kind
+        self.drag_kind = None
+        self.drag_pos = None
+        if self.state != 'playing' or self.almanac.opened:
+            self.selected = None
+            return
+        if kind == 'shovel':
+            self.selected = None
+            cell = self.lawn_cell(pos)
+            plant = self.plant_at(*cell) if cell else None
+            if plant:
+                plant.alive = False
+                self._reap()
+                self.show_notice(f"已铲除{PLANT_NAMES[plant.kind]}，不返还阳光")
+            return
+        if kind in self.seeds:
+            self.selected = kind
+            self._plant_selected(pos)
+        self.selected = None
+
     def _on_click(self, pos) -> None:
+        if self.state != "playing" or self.almanac.opened:
+            return
+        if PAUSE_BUTTON_RECT.collidepoint(pos):
+            self.cancel_drag()
+            self.state = "paused"
+            return
         # 1) Collect a sun if one was clicked.
         for s in reversed(self.suns):
-            if s.contains(pos):
+            if s.alive and s.contains(pos):
                 self.sun += s.amount
                 s.alive = False
                 return
@@ -435,30 +622,64 @@ class Game:
                 return
 
         # 3) Otherwise try to place the selected plant.
+        self._plant_selected(pos)
+
+    def _plant_selected(self, pos):
+        if self.state != 'playing' or self.almanac.opened:
+            return
         if self.selected is None:
             return
-        col = (pos[0] - C.LAWN_X) // C.CELL_W
-        row = (pos[1] - C.LAWN_Y) // C.CELL_H
-        if not (0 <= col < C.GRID_COLS and 0 <= row < self.rows):
+        cell = self.lawn_cell(pos)
+        reason = self.planting_error(cell)
+        if reason:
+            self.show_notice(reason)
             return
-        if self.plant_at(col, row) is not None:
-            return
+        col, row = cell
         cost = C.PLANTS[self.selected]["cost"]
-        if self.sun < cost or self.cooldowns.get(self.selected, 0.0) > 0:
-            return
         self.sun -= cost
         self.cooldowns[self.selected] = C.PLANTS[self.selected]["recharge"]
         self.plants.append(PLANT_CLASSES[self.selected](col, row))
+        # Set mushroom sleep immediately, including the placement preview frame.
+        self.plants[-1].update(0.0, self)
+        mushroom_asleep = self.plants[-1].sleeping
         self.selected = None
+        self.notice_timer = 0.0
+        if mushroom_asleep:
+            self.show_notice("蘑菇白天会睡觉，请在夜间使用")
+
+    def show_notice(self, message: str) -> None:
+        self.notice = message
+        self.notice_timer = 2.5
+
+    def lawn_cell(self, pos):
+        """Shared integer hit test for placement and the hover preview."""
+        col = int((pos[0] - C.LAWN_X) // C.CELL_W)
+        row = int((pos[1] - C.LAWN_Y) // C.CELL_H)
+        if 0 <= col < C.GRID_COLS and 0 <= row < self.rows:
+            return col, row
+        return None
+
+    def planting_error(self, cell) -> str:
+        if cell is None:
+            return "请种在草坪格子内"
+        if self.selected not in self.seeds:
+            return "请先选择上方的植物卡片"
+        if self.plant_at(*cell) is not None:
+            return "这里已经种了植物"
+        return self.card_error(self.selected)
 
     # ------------------------------------------------------ seed chooser
     def _to_canvas(self, pos):
         """Map a window pixel to the fixed 800x600 canvas."""
+        rect = self.viewport()
+        return ((pos[0] - rect.x) * C.SCREEN_W / rect.w,
+                (pos[1] - rect.y) * C.SCREEN_H / rect.h)
+
+    def viewport(self):
         w, h = self.screen.get_size()
         scale = min(w / C.SCREEN_W, h / C.SCREEN_H)
-        off_x = (w - C.SCREEN_W * scale) / 2
-        off_y = (h - C.SCREEN_H * scale) / 2
-        return ((pos[0] - off_x) / scale, (pos[1] - off_y) / scale)
+        sw, sh = int(C.SCREEN_W * scale), int(C.SCREEN_H * scale)
+        return pygame.Rect((w - sw) // 2, (h - sh) // 2, sw, sh)
 
     def _chooser_origin(self):
         """Panel top-left, and the card grid origin inside it."""
@@ -482,6 +703,12 @@ class Game:
                            C.CHOOSER_CARD_W, C.CHOOSER_CARD_H)
 
     def _on_choose_click(self, pos) -> None:
+        if SEED_PREV_RECT.collidepoint(pos):
+            self.turn_page(-1)
+            return
+        if SEED_NEXT_RECT.collidepoint(pos):
+            self.turn_page(1)
+            return
         if CHOOSER_BACK_RECT.collidepoint(pos):
             self.state = "levelselect"
             return
@@ -495,9 +722,11 @@ class Game:
                 self.seeds.pop(i)
                 return
         # Add a plant from the pool.
-        for i, kind in enumerate(self.available_plants()):
+        for i, kind in enumerate(self.visible_seeds()):
             if not self._chooser_rect(i).collidepoint(pos):
                 continue
+            if kind not in self.available_plants():
+                return
             if kind in self.seeds:
                 self.seeds.remove(kind)
             elif len(self.seeds) < C.MAX_SEEDS:
@@ -512,20 +741,30 @@ class Game:
         return mode_rect(which)
 
     def _on_mode_click(self, pos) -> None:
+        if self.almanac.menu_rect.collidepoint(pos):
+            self.almanac.opened = True
+            return
         if self._mode_rect(0).collidepoint(pos):
             self.start_adventure()
         elif self._mode_rect(1).collidepoint(pos):
             self.mode = "select"
+            self.level_page = self.unlocked // 7
             self.state = "levelselect"
 
     def _level_rect(self, index: int) -> pygame.Rect:
         return level_rect(index)
 
     def _on_levelselect_click(self, pos) -> None:
+        if MAP_PREV_RECT.collidepoint(pos):
+            self.turn_page(-1)
+            return
+        if MAP_NEXT_RECT.collidepoint(pos):
+            self.turn_page(1)
+            return
         if BACK_RECT.collidepoint(pos):
             self.state = "menu"
             return
-        for i in range(len(C.LEVELS)):
+        for i in self.visible_levels():
             if self._level_rect(i).collidepoint(pos):
                 # Select mode lets the player jump straight to any level they
                 # have already unlocked; locked ones are ignored.
@@ -543,6 +782,10 @@ class Game:
 
     # ------------------------------------------------------------------ draw
     def draw(self) -> None:
+        if self.almanac.opened:
+            self.almanac.draw()
+            self._present()
+            return
         if self.state == "menu":
             self._draw_menu()
         elif self.state == "levelselect":
@@ -552,23 +795,31 @@ class Game:
         else:
             self.canvas.fill(C.COL_SKY)
             self._draw_lawn()
+            if self.state == "playing":
+                self.ui.draw_placement()
             for e in (self.plants + self.zombies + self.projectiles + self.suns
                       + self.explosions + self.effects):
                 e.draw(self.canvas)
+            if self.frost_timer > 0:
+                frost = pygame.Surface((C.SCREEN_W, C.SCREEN_H), pygame.SRCALPHA)
+                frost.fill((160, 225, 255, int(80 * self.frost_timer / 0.7)))
+                self.canvas.blit(frost, (0, 0))
             self._draw_shop()
             self._draw_hud()
-            if self.state != "playing":
+            if self.state == "playing":
+                self.ui.draw_battle_info()
+                self.ui.draw_drag_cursor()
+            if self.state == "paused":
+                self.ui.draw_pause()
+            elif self.state != "playing":
                 self._draw_overlay()
         self._present()
 
     def _present(self) -> None:
         """Scale the fixed canvas into the (possibly fullscreen) window."""
-        w, h = self.screen.get_size()
-        scale = min(w / C.SCREEN_W, h / C.SCREEN_H)
-        sw, sh = int(C.SCREEN_W * scale), int(C.SCREEN_H * scale)
+        rect = self.viewport()
         self.screen.fill((0, 0, 0))
-        self.screen.blit(pygame.transform.smoothscale(self.canvas, (sw, sh)),
-                         ((w - sw) // 2, (h - sh) // 2))
+        self.screen.blit(pygame.transform.smoothscale(self.canvas, rect.size), rect)
         pygame.display.flip()
 
     def _draw_menu(self) -> None:

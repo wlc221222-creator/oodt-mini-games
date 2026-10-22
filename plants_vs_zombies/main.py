@@ -5,8 +5,11 @@ Usage:
 
 Controls:
     1-8            select a plant card
-    left click     place the selected plant on the lawn, or collect a sun
+    drag a card    release on a valid lawn cell to plant; elsewhere cancels
+    drag shovel    release over a plant to remove it (no refund)
+    left click     collect a sun, or plant a keyboard-selected seed
     right click    cancel the current selection
+    P              pause/resume the battle (Enter/Esc also resume while paused)
     Enter          continue the adventure after a win
     R              retry the current level after win or loss
     Esc            return to the menu (quit from the menu)
@@ -35,7 +38,7 @@ def self_test(report_path: str) -> int:
             save.SAVE_PATH = str(Path(temp) / "save.json")
             game = Game()
             assert game.unlocked == 0 and game.owned_plants == C.START_PLANTS
-            for name in ("menu", "background_0", "background_1", "wave_head", "wave_flag"):
+            for name in ("menu", "background_0", "background_1", "wave_head", "wave_flag", "shovel"):
                 assert game.assets.misc(name) is not None, name
             for kind, spec in C.PLANTS.items():
                 assert game.assets.plant(spec["sprite"]), kind

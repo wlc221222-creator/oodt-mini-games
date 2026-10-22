@@ -1,0 +1,90 @@
+{
+  "repository": "JezaChen/CarrotGuardGame",
+  "commit": "478f66092f994b95408fa130e8b0418af4f9828f",
+  "files": [
+    {
+      "path": "Resources/Themes/Towers/TStar-hd.png",
+      "sha": "6d6be9e57b336eec767729d4f7b74cdbe580e130",
+      "size": 107926,
+      "local": "Themes/Towers/TStar-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TStar-hd.plist",
+      "sha": "887b1ab6539bcb98d9025c1e54d5bb81e3cd4e8d",
+      "size": 12384,
+      "local": "Themes/Towers/TStar-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TBlueStar-hd.png",
+      "sha": "b0f2c945caf9e1b8ac941c0b0f0ab5e331dc10af",
+      "size": 128982,
+      "local": "Themes/Towers/TBlueStar-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TBlueStar-hd.plist",
+      "sha": "053bc84ee570a2e6abfc058e2bf609e58d7f30f9",
+      "size": 12881,
+      "local": "Themes/Towers/TBlueStar-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TPin-hd.png",
+      "sha": "8729cbd1e98cdf14376184833481fbe31fcb31e8",
+      "size": 62678,
+      "local": "Themes/Towers/TPin-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TPin-hd.plist",
+      "sha": "8e354dc420599b50ed20d5405b1345078a26fb0d",
+      "size": 11831,
+      "local": "Themes/Towers/TPin-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TRocket-hd.png",
+      "sha": "3da454373295d1bc3f261a5b6522389b1cddb4a3",
+      "size": 239882,
+      "local": "Themes/Towers/TRocket-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TRocket-hd.plist",
+      "sha": "8c1065de4cb4531d110183f59e6d8dad753bffff",
+      "size": 18090,
+      "local": "Themes/Towers/TRocket-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TSnow-hd.png",
+      "sha": "4b767aa66fdbc0659aa178a7aec2b6b5b96aa332",
+      "size": 826098,
+      "local": "Themes/Towers/TSnow-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TSnow-hd.plist",
+      "sha": "91f930f95bf36eb0b95b5c58382d92a7f35f5c50",
+      "size": 15688,
+      "local": "Themes/Towers/TSnow-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme3/BG0/BG1-hd.png",
+      "sha": "f2f0a2918630e90f4b8ba6b99959bcd9b359c688",
+      "size": 1156595,
+      "local": "Themes/Theme3/BG0/BG1-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme3/BG0/BG1-hd.plist",
+      "sha": "85f306d45e6f21dcaffbae9e3e892ab5e33f9ca9",
+      "size": 1202,
+      "local": "Themes/Theme3/BG0/BG1-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme3/BG1/BG-hd.png",
+      "sha": "1c04514ec8093b9f871702bb4088c7e4d4322c4a",
+      "size": 265642,
+      "local": "Themes/Theme3/BG1/BG-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme3/BG1/BG-hd.plist",
+      "sha": "2e46510af8a155017c4427015bf24fcbf3567217",
+      "size": 886,
+      "local": "Themes/Theme3/BG1/BG-hd.plist"
+    }
+  ]
+}
