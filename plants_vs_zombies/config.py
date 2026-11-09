@@ -11,7 +11,7 @@ required 5 minute video.
 SCREEN_W = 800
 SCREEN_H = 600
 FPS = 60
-TITLE = "Plants vs Zombies - Night Expansion"
+TITLE = "Plants vs Zombies - Garden Polish"
 
 # ------------------------------------------------------------- lawn grid
 GRID_COLS = 9
