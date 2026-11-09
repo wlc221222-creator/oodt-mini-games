@@ -151,6 +151,7 @@ class Game:
 
     # ------------------------------------------------------------ lifecycle
     def reset(self) -> None:
+        self.ui.feedback.clear()
         self.plants: List[Plant] = []
         self.zombies: List[Zombie] = []
         self.projectiles: List[Projectile] = []
@@ -185,6 +186,7 @@ class Game:
 
     def start_level(self, index: int, mode: str) -> None:
         """Begin ``index`` in the given mode, resetting the battlefield."""
+        self.ui.feedback.clear()
         self.level_index = max(0, min(index, len(C.LEVELS) - 1))
         self.level = C.LEVELS[self.level_index]
         self.rows = self.level["rows"]
@@ -308,6 +310,7 @@ class Game:
 
     # ---------------------------------------------------------------- update
     def update(self, dt: float) -> None:
+        self.ui.update(dt)
         if self.state != "playing" or self.almanac.opened:
             return
         self.elapsed += dt
@@ -423,6 +426,43 @@ class Game:
                                                   pygame.RESIZABLE)
 
     def handle_event(self, event: pygame.event.Event) -> None:
+        # SDL touch coordinates are normalized to the full window. Convert once
+        # then follow the exact same viewport/drag/drop path as the mouse.
+        if event.type in (pygame.FINGERDOWN, pygame.FINGERMOTION, pygame.FINGERUP):
+            if event.type == pygame.FINGERDOWN:
+                if self.ui.touch_id is not None:
+                    return
+                self.ui.touch_id = event.finger_id
+            if event.finger_id != self.ui.touch_id:
+                return
+            w, h = self.screen.get_size()
+            pos = (round(event.x * w), round(event.y * h))
+            self.ui.touch_pos = self._to_canvas(pos)
+            kind = {pygame.FINGERDOWN: pygame.MOUSEBUTTONDOWN,
+                    pygame.FINGERMOTION: pygame.MOUSEMOTION, pygame.FINGERUP: pygame.MOUSEBUTTONUP}[event.type]
+            attrs = {'pos': pos, 'buttons': (1, 0, 0)} if kind == pygame.MOUSEMOTION else {'pos': pos, 'button': 1}
+            self.handle_event(pygame.event.Event(kind, **attrs))
+            if event.type == pygame.FINGERUP:
+                self.ui.touch_id = self.ui.touch_pos = None
+            return
+        if getattr(event, 'touch', False):
+            return  # SDL's synthetic mouse copy of a finger event.
+        self.ui.observe_input(event)
+        if event.type in (pygame.WINDOWFOCUSLOST, pygame.VIDEORESIZE):
+            self.ui.touch_id = self.ui.touch_pos = None
+        if self.state == 'menu' and not self.almanac.opened:
+            controls = (self._mode_rect(0), self._mode_rect(1), self.almanac.menu_rect)
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = self._to_canvas(event.pos)
+                self.ui.menu_press = next((i for i, rect in enumerate(controls) if rect.collidepoint(pos)), None)
+                return
+            if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                pressed = self.ui.menu_press
+                self.ui.menu_press = None
+                pos = self._to_canvas(event.pos)
+                if pressed is not None and controls[pressed].collidepoint(pos):
+                    self._on_mode_click(pos)
+                return
         if event.type == pygame.WINDOWFOCUSLOST:
             self.cancel_drag()
             return
@@ -575,6 +615,7 @@ class Game:
         reason = self.card_error(kind)
         if reason:
             self.show_notice(reason)
+            self.ui.emit(pos, 'error')
             return
         self.selected = self.drag_kind = kind
         self.drag_pos = pos
@@ -592,6 +633,7 @@ class Game:
             cell = self.lawn_cell(pos)
             plant = self.plant_at(*cell) if cell else None
             if plant:
+                self.ui.emit((plant.x, plant.baseline), 'error')
                 plant.alive = False
                 self._reap()
                 self.show_notice(f"已铲除{PLANT_NAMES[plant.kind]}，不返还阳光")
@@ -613,6 +655,7 @@ class Game:
             if s.alive and s.contains(pos):
                 self.sun += s.amount
                 s.alive = False
+                self.ui.emit((s.x, s.y), 'sun', s.amount)
                 return
 
         # 2) A click on the card bar selects a plant.
@@ -633,6 +676,7 @@ class Game:
         reason = self.planting_error(cell)
         if reason:
             self.show_notice(reason)
+            self.ui.emit(pos, 'error')
             return
         col, row = cell
         cost = C.PLANTS[self.selected]["cost"]
@@ -641,6 +685,7 @@ class Game:
         self.plants.append(PLANT_CLASSES[self.selected](col, row))
         # Set mushroom sleep immediately, including the placement preview frame.
         self.plants[-1].update(0.0, self)
+        self.ui.emit((self.plants[-1].x, self.plants[-1].baseline))
         mushroom_asleep = self.plants[-1].sleeping
         self.selected = None
         self.notice_timer = 0.0
@@ -800,6 +845,7 @@ class Game:
             for e in (self.plants + self.zombies + self.projectiles + self.suns
                       + self.explosions + self.effects):
                 e.draw(self.canvas)
+            self.ui.draw_feedback()
             if self.frost_timer > 0:
                 frost = pygame.Surface((C.SCREEN_W, C.SCREEN_H), pygame.SRCALPHA)
                 frost.fill((160, 225, 255, int(80 * self.frost_timer / 0.7)))
