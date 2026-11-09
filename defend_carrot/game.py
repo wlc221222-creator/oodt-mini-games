@@ -1,4 +1,4 @@
-"""Game loop and controller for the Defend the Carrot MVP.
+"""Game loop and controller for the Defend the Carrot adventure.
 
 ``Game`` owns the entity collections, the path, the wave schedule, the coin
 economy and the HUD. Entities only call back into it for shared facts such
@@ -10,19 +10,27 @@ Run with:  python main.py
 from __future__ import annotations
 
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 import pygame
 
 import config as C
+import progress
+from guide import FieldGuide
+from ui import GameUI, load_font
+from scenery import field_image
 from entities import (
     Apple, Bat, Bullet, Carrot, Effect, Fruit, Golem, Melon, Monster, Orange,
     Rock, RockThrower, Slime, tile_center,
+    Star, IceStar, PoisonPin, RocketTower, Snowflake,
+    YellowFly, Starling, EliteGolem, BigBoss,
 )
 
-FRUIT_CLASSES = {"apple": Apple, "orange": Orange, "melon": Melon}
+FRUIT_CLASSES = {"apple": Apple, "orange": Orange, "melon": Melon, 'star': Star,
+                 'ice': IceStar, 'poison': PoisonPin, 'rocket': RocketTower, 'snow': Snowflake}
 MONSTER_CLASSES = {
     "slime": Slime, "bat": Bat, "golem": Golem, "thrower": RockThrower,
+    'yellow': YellowFly, 'starling': Starling, 'elite': EliteGolem, 'boss': BigBoss,
 }
 
 
@@ -32,24 +40,21 @@ class Game:
         self.screen = pygame.display.set_mode((C.SCREEN_W, C.SCREEN_H))
         pygame.display.set_caption(C.TITLE)
         self.clock = pygame.time.Clock()
-        # pygame's default bundled font avoids SysFont's Windows registry scan.
-        self.font = pygame.font.Font(None, 24)
-        self.big_font = pygame.font.Font(None, 56)
-        self.small_font = pygame.font.Font(None, 20)
+        self.font = load_font(19)
+        self.small_font = load_font(15)
+        self.guide = FieldGuide()
+        self.ui = GameUI(self)
+        self.progress = progress.load()
         self.reset()
+        self.state = "menu"
 
     # ------------------------------------------------------------ lifecycle
-    def reset(self) -> None:
+    def reset(self, level_index=0) -> None:
         self.fruits: List[Fruit] = []
         self.monsters: List[Monster] = []
         self.bullets: List[Bullet] = []
         self.rocks: List[Rock] = []
         self.effects: List[Effect] = []
-
-        self.carrot = Carrot(*C.CARROT_TILE)
-        self.path: List[Tuple[float, float]] = [
-            tile_center(c, r) for (c, r) in C.PATH
-        ]
 
         self.coins = C.START_COINS
         self.selected: Optional[str] = None
@@ -57,10 +62,15 @@ class Game:
         self.wave_index = 0
         self.wave_timer = 0.0
         self.spawn_queue: List[list] = []
-        self.state = "playing"       # playing | won | lost
+        self.state = "playing"       # menu | playing | paused | levelclear | won | lost
         self.elapsed = 0.0
         self.kills = 0
-        self._load_level(0)
+        self.score = 0
+        self.guide_open = False
+        self.level_select_open = False
+        self.inspected = None
+        self.speed_multiplier = 1
+        self._load_level(level_index)
 
     def path_px(self, seg: int, frac: float):
         return self.path[seg]
@@ -69,9 +79,24 @@ class Game:
         if index >= len(C.LEVELS):
             return
         self.level_index = index
+        level = C.LEVELS[index]
+        self.coins = level['start_coins']
+        self.available_towers = level['towers']
+        self.path = [tile_center(c, r) for c, r in level["path"]]
+        self.path_cells = C.path_cells(level["path"])
+        self.carrot_tile = level["path"][-1]
+        self.carrot = Carrot(*self.carrot_tile)
+        for name in ("fruits", "monsters", "bullets", "rocks", "effects"):
+            setattr(self, name, [])
+        self.selected = None
+        self.inspected = None
+        self.level_saved = False
+        self.save_error = False
+        self.notice = ""
+        self.notice_timer = 0.0
         self.wave_index = 0
         self._load_wave(0)
-        self.wave_timer = -2.0       # short grace before the first wave
+        self.wave_timer = -C.LEVEL_BREAK
 
     def _load_wave(self, index: int) -> None:
         waves = C.LEVELS[self.level_index]["waves"]
@@ -90,27 +115,38 @@ class Game:
     def can_build(self, col: int, row: int) -> bool:
         if not (0 <= col < C.GRID_COLS and 0 <= row < C.GRID_ROWS):
             return False
-        if (col, row) in C.PATH_CELLS:
+        if (col, row) in self.path_cells:
             return False
-        if (col, row) == C.CARROT_TILE:
+        if (col, row) == self.carrot_tile:
             return False
         return self.fruit_at(col, row) is None
 
     def damage_carrot(self, amount: float) -> None:
         self.carrot.take_damage(amount)
+        self.show_notice(f"有怪物突破防线！萝卜失去 {amount:g} 点生命")
         if not self.carrot.alive:
             self.state = "lost"
 
     # ---------------------------------------------------------------- update
     def update(self, dt: float) -> None:
+        self.ui.update(dt)
+        if self.state != "playing" or self.guide_open or self.level_select_open:
+            return
+        dt *= self.speed_multiplier
+        self.elapsed += dt
+        self.notice_timer = max(0.0, self.notice_timer - dt)
+        self._update_waves(dt)
         if self.state != "playing":
             return
-        self.elapsed += dt
-        self._update_waves(dt)
+        self.carrot.update(dt, self)
         for group in (self.fruits, self.monsters, self.bullets,
                       self.rocks, self.effects):
             for e in group:
-                e.update(dt, self)
+                if e.alive:
+                    e.update(dt, self)
+                if self.state != "playing":
+                    self._reap()
+                    return
         self._reap()
         self._check_victory()
 
@@ -127,151 +163,276 @@ class Game:
                 pending.append([kind, delay])
         self.spawn_queue = pending
 
-        if not self.spawn_queue and not self.monsters:
-            if self.wave_index + 1 < len(waves):
+        if not self.spawn_queue:
+            if self.wave_index + 1 < len(waves) and self.wave_timer >= waves[self.wave_index][-1][1] + C.WAVE_BREAK:
                 self._load_wave(self.wave_index + 1)
-                self.wave_timer = -C.WAVE_BREAK
-            else:
+            elif not self.monsters and self.wave_index + 1 >= len(waves):
                 self._advance_level()
 
     def _advance_level(self) -> None:
+        self._save_completion()
         if self.level_index + 1 < len(C.LEVELS):
+            self.state = "levelclear"
+
+    def _save_completion(self):
+        if self.level_saved:
+            return
+        self.level_saved = True
+        self.progress['unlocked'] = max(self.progress['unlocked'], min(len(C.LEVELS), self.level_index + 2))
+        key = str(self.level_index)
+        self.progress['best'][key] = max(self.progress['best'].get(key, 0), int(self.carrot.hp))
+        self.save_error = not progress.save(self.progress)
+        if self.save_error:
+            self.show_notice('已通关，但进度文件暂时无法写入')
+
+    def _continue(self) -> None:
+        if self.state == "paused":
+            self.state = "playing"
+        elif self.state == "levelclear":
             self._load_level(self.level_index + 1)
             self.wave_timer = -C.LEVEL_BREAK
             self.state = "playing"
+        elif self.state in ("won", "lost"):
+            self.reset(self.level_index)
+        elif self.state == 'menu':
+            self.reset(min(self.progress['unlocked'] - 1, len(C.LEVELS) - 1))
 
     def _reap(self) -> None:
         for name in ("fruits", "monsters", "bullets", "rocks", "effects"):
             group = getattr(self, name)
             for e in group:
-                if not e.alive and isinstance(e, Monster):
+                if not e.alive and isinstance(e, Monster) and not e.escaped:
                     self.coins += e.reward
                     self.kills += 1
+                    self.score += e.reward
             setattr(self, name, [e for e in group if e.alive])
 
     def _check_victory(self) -> None:
         waves = C.LEVELS[self.level_index]["waves"]
         last_level = self.level_index >= len(C.LEVELS) - 1
-        if (last_level and self.wave_index >= len(waves) - 1
+        if (self.state == "playing" and self.carrot.alive
+                and last_level and self.wave_index >= len(waves) - 1
                 and not self.spawn_queue and not self.monsters):
             self.state = "won"
+            self._save_completion()
+
+    def upgrade_tower(self):
+        tower = self.inspected
+        if self.state != 'playing' or self.guide_open or tower is None or not tower.alive:
+            return False
+        cost = tower.upgrade_cost
+        if cost is None:
+            self.show_notice('已升至三级')
+            return False
+        if self.coins < cost:
+            self.show_notice(f'升级还差 {cost - self.coins} 金币')
+            return False
+        self.coins -= cost
+        tower.upgrade()
+        return True
+
+    def sell_tower(self):
+        tower = self.inspected
+        if self.state != 'playing' or self.guide_open or tower is None or not tower.alive:
+            return False
+        self.coins += tower.sell_value
+        self.fruits.remove(tower)
+        tower.alive = False
+        self.inspected = None
+        return True
 
     # ----------------------------------------------------------------- input
     def handle_event(self, event: pygame.event.Event) -> None:
+        if self.level_select_open:
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_ESCAPE, pygame.K_l):
+                self.level_select_open = False
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                if self.ui.back_rect.collidepoint(event.pos):
+                    self.level_select_open = False
+                    return
+                for i in range(len(C.LEVELS)):
+                    if self.ui.level_rect(i).collidepoint(event.pos) and i < self.progress['unlocked']:
+                        self.reset(i)
+                        break
+            return
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_i:
+            self.guide_open = not self.guide_open
+            return
+        if self.guide_open:
+            if event.type == pygame.KEYDOWN and event.key == pygame.K_TAB:
+                self.guide.tab = 'monsters' if self.guide.tab == 'towers' else 'towers'
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.guide.towers_rect.collidepoint(event.pos):
+                self.guide.tab = 'towers'
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and self.guide.monsters_rect.collidepoint(event.pos):
+                self.guide.tab = 'monsters'
+            elif (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE
+                    or event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+                    and self.guide.close_rect.collidepoint(event.pos)):
+                self.guide_open = False
+            return
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_l and self.state == 'menu':
+                self.level_select_open = True
+                return
             if event.key == pygame.K_ESCAPE:
-                pygame.quit()
-                sys.exit(0)
-            if event.key == pygame.K_r and self.state != "playing":
-                self.reset()
-            if event.key in (pygame.K_1, pygame.K_2, pygame.K_3):
+                if self.state == "menu":
+                    pygame.quit()
+                    sys.exit(0)
+                self.state = "paused" if self.state == "playing" else "menu"
+                return
+            if event.key == pygame.K_p:
+                if self.state in ("playing", "paused"):
+                    self.state = "paused" if self.state == "playing" else "playing"
+                return
+            if event.key == pygame.K_RETURN:
+                self._continue()
+                return
+            if event.key == pygame.K_r and self.state in ("won", "lost"):
+                self.reset(self.level_index)
+                return
+            if self.state != "playing":
+                return
+            if event.key == pygame.K_u:
+                self.upgrade_tower()
+            elif event.key == pygame.K_DELETE:
+                self.sell_tower()
+            elif event.key == pygame.K_TAB:
+                self.speed_multiplier = 3 - self.speed_multiplier
+            elif pygame.K_1 <= event.key <= pygame.K_8:
                 idx = event.key - pygame.K_1
                 if idx < len(C.SHOP_ORDER):
-                    self.selected = C.SHOP_ORDER[idx]
+                    kind = C.SHOP_ORDER[idx]
+                    if kind in self.available_towers:
+                        self.selected, self.inspected = kind, None
+                    else:
+                        self.show_notice(f'第{C.FRUITS[kind]["unlock"]}关开放此塔')
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.state != 'menu' and self.guide.button_rect.collidepoint(event.pos):
+                self.guide_open = True
+                return
             if self.state != "playing":
-                self.reset()
+                if self.state == 'menu' and self.ui.level_button_rect.collidepoint(event.pos):
+                    self.level_select_open = True
+                elif self.ui.primary_rect.collidepoint(event.pos):
+                    self._continue()
+                elif self.ui.secondary_rect.collidepoint(event.pos):
+                    if self.state == "menu":
+                        self.guide_open = True
+                    else:
+                        self.state = "menu"
+                return
+            if self.ui.pause_rect.collidepoint(event.pos):
+                self.state = "paused"
+                return
+            if self.ui.speed_rect.collidepoint(event.pos):
+                self.speed_multiplier = 3 - self.speed_multiplier
+                return
+            if self.ui.upgrade_rect.collidepoint(event.pos):
+                self.upgrade_tower()
+                return
+            if self.ui.sell_rect.collidepoint(event.pos):
+                self.sell_tower()
                 return
             self._on_click(event.pos)
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
+        if (event.type == pygame.MOUSEBUTTONDOWN and event.button == 3
+                and self.state == "playing"):
             self.selected = None
 
     def _on_click(self, pos) -> None:
+        if self.state != "playing" or self.guide_open:
+            return
+        for i, kind in enumerate(C.SHOP_ORDER):
+            if self._card_rect(i).collidepoint(pos):
+                if kind in self.available_towers:
+                    self.selected, self.inspected = kind, None
+                else:
+                    self.show_notice(f'第{C.FRUITS[kind]["unlock"]}关开放此塔')
+                return
+        cell = self.field_cell(pos)
         if self.selected is None:
+            self.inspected = self.fruit_at(*cell) if cell else None
             return
-        col = pos[0] // C.TILE
-        row = (pos[1] - C.HUD_H) // C.TILE
-        if not self.can_build(col, row):
+        reason = self.building_error(cell)
+        if reason:
+            self.show_notice(reason)
             return
+        col, row = cell
         cost = C.FRUITS[self.selected]["cost"]
-        if self.coins < cost:
-            return
         self.coins -= cost
         self.fruits.append(FRUIT_CLASSES[self.selected](col, row))
+        self.notice_timer = 0.0
         self.selected = None
+
+    def field_cell(self, pos):
+        col = int(pos[0] // C.TILE)
+        row = int((pos[1] - C.HUD_H) // C.TILE)
+        if 0 <= col < C.GRID_COLS and 0 <= row < C.GRID_ROWS:
+            return col, row
+        return None
+
+    def building_error(self, cell):
+        if cell is None:
+            return "请在草地区域建造"
+        if self.selected not in C.FRUITS:
+            return "请先选择下方的防御塔卡片"
+        if self.selected not in self.available_towers:
+            return "本关尚未开放该防御塔"
+        if cell == self.carrot_tile:
+            return "这里是萝卜的位置，不能建造"
+        if cell in self.path_cells:
+            return "怪物道路上不能建造"
+        if self.fruit_at(*cell):
+            return "这里已经有防御塔了"
+        shortfall = C.FRUITS[self.selected]['cost'] - self.coins
+        if shortfall > 0:
+            return f"金币不足，还差 {shortfall}"
+        return ""
+
+    def show_notice(self, message):
+        self.notice = message
+        self.notice_timer = 2.5
 
     # ------------------------------------------------------------------ draw
     def draw(self) -> None:
-        self.screen.fill(C.COL_GRASS)
+        if self.level_select_open:
+            self.ui.draw_level_select()
+        elif self.guide_open:
+            self.guide.draw(self.screen, self.ui.time)
+        elif self.state == 'menu':
+            self.ui.draw_menu()
+        else:
+            self._draw_battle()
+        pygame.display.flip()
+
+    def _draw_battle(self) -> None:
+        self.screen.fill(C.LEVELS[self.level_index]["grass"][0])
         self._draw_field()
+        if self.state == "playing" and not self.guide_open:
+            self.ui.draw_placement()
         for e in (self.fruits + self.monsters + self.bullets + self.rocks
                   + [self.carrot] + self.effects):
             e.draw(self.screen)
         self._draw_hud()
         self._draw_shop()
+        if self.state == "playing" and not self.guide_open:
+            self.ui.draw_battle_info()
         if self.state != "playing":
-            self._draw_overlay()
-        pygame.display.flip()
+            self.ui.draw_overlay()
+        else:
+            self.ui.button(self.ui.pause_rect, "暂停 [P]")
+        self.guide.draw_button(self.screen)
 
     def _draw_field(self) -> None:
-        for row in range(C.GRID_ROWS):
-            for col in range(C.GRID_COLS):
-                if (col, row) in C.PATH_CELLS:
-                    continue
-                base = C.COL_GRASS if (row + col) % 2 == 0 else C.COL_GRASS_B
-                x, y = col * C.TILE, C.HUD_H + row * C.TILE
-                pygame.draw.rect(self.screen, base, (x, y, C.TILE, C.TILE))
-        # Path.
-        pts = [(int(x), int(y)) for (x, y) in self.path]
-        pygame.draw.lines(self.screen, C.COL_PATH_EDGE, False, pts, C.TILE + 4)
-        pygame.draw.lines(self.screen, C.COL_PATH, False, pts, C.TILE - 6)
+        self.screen.blit(field_image(self.level_index), (0, C.HUD_H))
 
     def _card_rect(self, index: int) -> pygame.Rect:
-        x = 12 + index * 150
-        return pygame.Rect(x, C.SCREEN_H - C.SHOP_H + 8, 140, C.SHOP_H - 18)
+        return pygame.Rect(12 + index % 4 * 124, C.SCREEN_H - C.SHOP_H + 36 + index // 4 * 64, 116, 58)
 
     def _draw_shop(self) -> None:
-        pygame.draw.rect(self.screen, C.COL_SHOP_BG,
-                         (0, C.SCREEN_H - C.SHOP_H, C.SCREEN_W, C.SHOP_H))
-        for i, kind in enumerate(C.SHOP_ORDER):
-            spec = C.FRUITS[kind]
-            rect = self._card_rect(i)
-            affordable = self.coins >= spec["cost"]
-            col = (C.COL_CARD_SEL if self.selected == kind
-                   else C.COL_CARD if affordable else C.COL_CARD_OFF)
-            pygame.draw.rect(self.screen, col, rect, border_radius=8)
-            pygame.draw.rect(self.screen, (70, 70, 70), rect, 2, border_radius=8)
-            pygame.draw.circle(self.screen, spec["color"],
-                               (rect.x + 26, rect.y + 34), 17)
-            name = self.small_font.render(f"{i + 1}. {spec['label']}", True, C.COL_TEXT)
-            cost = self.small_font.render(f"{spec['cost']} coins", True, (150, 90, 0))
-            hp = self.small_font.render(f"HP {spec['hp']}", True, (90, 90, 90))
-            self.screen.blit(name, (rect.x + 48, rect.y + 12))
-            self.screen.blit(cost, (rect.x + 48, rect.y + 32))
-            self.screen.blit(hp, (rect.x + 48, rect.y + 50))
+        self.ui.draw_shop()
 
     def _draw_hud(self) -> None:
-        pygame.draw.rect(self.screen, C.COL_HUD_BG, (0, 0, C.SCREEN_W, C.HUD_H))
-        coin = self.font.render(f"Coins: {self.coins}", True, (255, 230, 120))
-        self.screen.blit(coin, (14, 16))
-        level = C.LEVELS[self.level_index]
-        waves = len(level["waves"])
-        info = self.font.render(
-            f"{level['name']}   Wave {min(self.wave_index + 1, waves)}/{waves}",
-            True, (240, 240, 240))
-        self.screen.blit(info, (190, 8))
-        kills = self.small_font.render(f"Kills: {self.kills}", True, (220, 220, 220))
-        self.screen.blit(kills, (190, 34))
-        # Carrot HP bar.
-        bar_w = 180
-        x = C.SCREEN_W - bar_w - 16
-        pygame.draw.rect(self.screen, C.COL_HP_BG, (x, 20, bar_w, 16), border_radius=6)
-        frac = max(0.0, self.carrot.hp / self.carrot.max_hp)
-        pygame.draw.rect(self.screen, C.COL_HP_FG,
-                         (x, 20, int(bar_w * frac), 16), border_radius=6)
-        label = self.small_font.render("Carrot HP", True, (240, 240, 240))
-        self.screen.blit(label, (x, 2))
-
-    def _draw_overlay(self) -> None:
-        overlay = pygame.Surface((C.SCREEN_W, C.SCREEN_H), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 140))
-        self.screen.blit(overlay, (0, 0))
-        msg = "LEVEL CLEAR!" if self.state == "won" else "THE CARROT FELL!"
-        color = (140, 255, 150) if self.state == "won" else (255, 130, 130)
-        text = self.big_font.render(msg, True, color)
-        self.screen.blit(text, text.get_rect(center=(C.SCREEN_W // 2, C.SCREEN_H // 2 - 20)))
-        sub = self.font.render("Click or press R to play again", True, (240, 240, 240))
-        self.screen.blit(sub, sub.get_rect(center=(C.SCREEN_W // 2, C.SCREEN_H // 2 + 40)))
+        self.ui.draw_hud()
 
     # ------------------------------------------------------------------- run
     def run(self) -> None:

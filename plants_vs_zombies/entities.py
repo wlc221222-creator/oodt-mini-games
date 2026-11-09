@@ -89,6 +89,8 @@ class Plant(Entity):
         self.cost = self.spec["cost"]
         self.baseline = baseline
         self._hit_flash = 0.0
+        self.sleeping = False
+        self._status_font = None
         self.anim = Anim(get_assets().plant(self.spec["sprite"]),
                          self.ANIM_INTERVAL)
 
@@ -99,8 +101,17 @@ class Plant(Entity):
             self.alive = False
 
     def update(self, dt: float, game: "Game") -> None:
+        if not self.alive:
+            return
         self._hit_flash = max(0.0, self._hit_flash - dt)
+        asleep = bool(self.spec.get("mushroom") and game.level["bg"] == 0)
+        if asleep != self.sleeping:
+            self.sleeping = asleep
+            name = self.spec["sprite"] + ("Sleep" if asleep else "")
+            self.anim.set_frames(get_assets().plant(name), reset=True)
         self.anim.update(dt)
+        if self.sleeping:
+            return
         self.on_tick(dt, game)
 
     def on_tick(self, dt: float, game: "Game") -> None:
@@ -119,6 +130,16 @@ class Plant(Entity):
                     midbottom=(int(self.x), int(self.baseline))),
                     special_flags=pygame.BLEND_RGBA_ADD)
         self._draw_hp(surface)
+        if self.sleeping:
+            self.draw_status(surface, "Z z", (190, 220, 255))
+
+    def draw_status(self, surface, text, color=(255, 230, 150)):
+        if self._status_font is None:
+            self._status_font = pygame.font.Font(None, 20)
+        image = self._status_font.render(text, True, color)
+        rect = image.get_rect(midbottom=(int(self.x), int(self.baseline) - 62))
+        pygame.draw.rect(surface, (35, 35, 30), rect.inflate(6, 4), border_radius=3)
+        surface.blit(image, rect)
 
     def _draw_fallback(self, surface: pygame.Surface) -> None:
         cx, cy = int(self.x), int(self.baseline) - 30
@@ -340,6 +361,9 @@ class Zombie(Entity):
         self.color = self.spec["color"]
         self.label = self.spec["label"]
         self.slow_timer = 0.0
+        self.freeze_timer = 0.0
+        self.paper_hp = float(self.spec.get("paper_hp", 0))
+        self.rage_timer = 0.0
         self.eat_timer = 0.0
         self.target: Optional[Plant] = None
         self._hit_flash = 0.0
@@ -349,9 +373,16 @@ class Zombie(Entity):
         self._death_anim: Optional[Anim] = None
         self._head_spawned = False
 
-    def take_damage(self, amount: float, boom: bool = False) -> None:
-        if self.dying:
+    def take_damage(self, amount: float, boom: bool = False, bypass_paper: bool = False) -> None:
+        if self.dying or not self.alive:
             return
+        if self.paper_hp > 0 and not bypass_paper:
+            absorbed = min(amount, self.paper_hp)
+            self.paper_hp -= absorbed
+            amount -= absorbed
+            if self.paper_hp <= 0:
+                self.rage_timer = 0.8
+                self.anim.set_frames(self._sets["rage_walk"], reset=True)
         self.hp -= amount
         self._hit_flash = 0.1
         if self.hp <= 0:
@@ -374,13 +405,26 @@ class Zombie(Entity):
         self._head_spawned = False
 
     def apply_slow(self) -> None:
+        # The newspaper shields its holder from the pea's chilling effect.
+        if self.paper_hp > 0:
+            return
         self.slow_timer = C.SNOW_SLOW_TIME
+
+    def freeze(self, seconds=3.0, slow_seconds=12.0):
+        if self.alive and not self.dying:
+            self.freeze_timer = max(self.freeze_timer, seconds)
+            self.slow_timer = max(self.slow_timer, slow_seconds)
 
     @property
     def current_speed(self) -> float:
-        return self.speed * (C.SNOW_SLOW_FACTOR if self.slow_timer > 0 else 1.0)
+        if self.freeze_timer > 0 or self.rage_timer > 0:
+            return 0.0
+        rage = self.spec.get("rage_multiplier", 1.0) if self.paper_hp <= 0 else 1.0
+        return self.speed * rage * (C.SNOW_SLOW_FACTOR if self.slow_timer > 0 else 1.0)
 
     def update(self, dt: float, game: "Game") -> None:
+        if not self.alive:
+            return
         self._hit_flash = max(0.0, self._hit_flash - dt)
 
         if self.dying:
@@ -393,21 +437,29 @@ class Zombie(Entity):
                 self.alive = False
             return
 
+        if self.freeze_timer > 0:
+            self.freeze_timer = max(0.0, self.freeze_timer - dt)
+            return
+        if self.rage_timer > 0:
+            self.rage_timer = max(0.0, self.rage_timer - dt)
+            return
         if self.slow_timer > 0:
             self.slow_timer -= dt
 
-        if self.target is None or not self.target.alive:
+        if self.target is None or not self.target.alive or not getattr(self.target, "edible", True):
             self.target = game.plant_in_front(self.row, self.x)
             self.eat_timer = 0.0
 
         if self.target is not None:
-            self.anim.set_frames(self._sets["attack"])
+            state = "rage_attack" if self.kind == "newspaper" and self.paper_hp <= 0 else "attack"
+            self.anim.set_frames(self._sets[state])
             self.eat_timer -= dt
             if self.eat_timer <= 0:
                 self.eat_timer = C.EAT_INTERVAL
                 self.target.take_damage(self.spec["damage"])
         else:
-            self.anim.set_frames(self._sets["walk"])
+            state = "rage_walk" if self.kind == "newspaper" and self.paper_hp <= 0 else "walk"
+            self.anim.set_frames(self._sets[state])
             self.x -= self.current_speed * dt
 
         if self.x < C.LAWN_X - 40:
@@ -420,16 +472,26 @@ class Zombie(Entity):
         if image is None:
             self._draw_fallback(surface)
         else:
-            blit_bottom(surface, image, self.x, self.y)
             if self._hit_flash > 0 and not self.dying:
-                ghost = image.copy()
-                ghost.fill((90, 90, 90, 0), special_flags=pygame.BLEND_RGBA_ADD)
-                surface.blit(ghost, ghost.get_rect(
-                    midbottom=(int(self.x), int(self.y))),
-                    special_flags=pygame.BLEND_RGBA_ADD)
+                # Brighten RGB only; keep the sprite's alpha and blit normally.
+                # Additive blending onto the lawn also brightens transparent
+                # pixels, producing the old white rectangle around the zombie.
+                image = image.copy()
+                image.fill((95, 95, 95), special_flags=pygame.BLEND_RGB_ADD)
+            blit_bottom(surface, image, self.x, self.y)
         if self.slow_timer > 0 and not self.dying:
             pygame.draw.circle(surface, (150, 220, 255),
                                (int(self.x), int(self.y) - 50), 32, 2)
+        if self.freeze_timer > 0 and not self.dying:
+            frost = pygame.Surface((60, 90), pygame.SRCALPHA)
+            frost.fill((145, 215, 255, 100))
+            surface.blit(frost, (int(self.x) - 30, int(self.y) - 90))
+            pygame.draw.rect(surface, (210, 245, 255), (int(self.x) - 30, int(self.y) - 90, 60, 90), 2)
+        if self.paper_hp > 0:
+            rect = pygame.Rect(int(self.x) - 20, int(self.y) - 111, 40, 4)
+            pygame.draw.rect(surface, (60, 60, 60), rect)
+            pygame.draw.rect(surface, (225, 214, 170), (rect.x, rect.y,
+                             round(40 * self.paper_hp / self.spec["paper_hp"]), 4))
         if not self.dying:
             self._draw_hp(surface)
 
@@ -452,21 +514,22 @@ class Zombie(Entity):
 # ---------------------------------------------------------------- projectile
 class Projectile(Entity):
     def __init__(self, x: float, y: float, damage: int, sprite: str,
-                 row: int, slow: bool = False) -> None:
+                 row: int, slow: bool = False, max_x: float | None = None) -> None:
         super().__init__(x, y)
         self.damage = damage
         self.sprite = sprite
         self.row = row
         self.slow = slow
+        self.max_x = C.SCREEN_W if max_x is None else min(max_x, C.SCREEN_W)
         self.image = get_assets().bullet(sprite)
 
     def update(self, dt: float, game: "Game") -> None:
         self.x += C.PEA_SPEED * dt
-        if self.x > C.SCREEN_W:
+        if self.x > self.max_x:
             self.alive = False
             return
         for z in game.zombies:
-            if z.alive and z.row == self.row and abs(z.x - self.x) < 26:
+            if z.alive and not z.dying and z.row == self.row and abs(z.x - self.x) < 26:
                 z.take_damage(self.damage)
                 if self.slow:
                     z.apply_slow()
@@ -495,7 +558,8 @@ class Sun(Entity):
         self.amount = amount
         self.falls = falls
         self.life = self.LIFE
-        self.target_y = y + random.uniform(60, 120) if falls else y
+        # Falling suns must reach the lawn instead of stopping behind the HUD.
+        self.target_y = random.uniform(C.LAWN_Y + 60, C.SCREEN_H - 50) if falls else y
         self.anim = Anim(get_assets().sun_frames, 0.1)
 
     def update(self, dt: float, game: "Game") -> None:

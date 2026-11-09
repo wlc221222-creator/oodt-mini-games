@@ -1,0 +1,114 @@
+{
+  "repository": "JezaChen/CarrotGuardGame",
+  "commit": "478f66092f994b95408fa130e8b0418af4f9828f",
+  "files": [
+    {
+      "path": "Resources/Themes/Towers/TBottle-hd.png",
+      "sha": "567f022a2b563ae0ee2a1013d3dc72bf010c53e9",
+      "size": 80543,
+      "local": "Themes/Towers/TBottle-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TBottle-hd.plist",
+      "sha": "0e6e6b1cd0f133987998f1c40f6149ef6ac228ee",
+      "size": 11452,
+      "local": "Themes/Towers/TBottle-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TFan-hd.png",
+      "sha": "13ce5fc1823a32adfa32bbd1ba5a86dd77a6a7bd",
+      "size": 103873,
+      "local": "Themes/Towers/TFan-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TFan-hd.plist",
+      "sha": "502fd24371d1858fa40f04eae8e3c413d1eea0c6",
+      "size": 9528,
+      "local": "Themes/Towers/TFan-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Towers/TSun-hd.png",
+      "sha": "0d040fa9eb2b0ed7d02cb38bba82cc0043f1849d",
+      "size": 620150,
+      "local": "Themes/Towers/TSun-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Towers/TSun-hd.plist",
+      "sha": "562e5d063d6ec4e5e86bc9aa4bcf5141270586cd",
+      "size": 15678,
+      "local": "Themes/Towers/TSun-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme1/Items/Monsters01-hd.png",
+      "sha": "f6ba0730ca44db7640e81224b679f077420999c1",
+      "size": 224777,
+      "local": "Themes/Theme1/Items/Monsters01-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme1/Items/Monsters01-hd.plist",
+      "sha": "fc90666c3a8595f9e0e9fde600e61e1aa768d4fe",
+      "size": 8783,
+      "local": "Themes/Theme1/Items/Monsters01-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Items/Items01-hd.png",
+      "sha": "71fcdb9fbd4e126f8796a5033fb622716ef7a19d",
+      "size": 196590,
+      "local": "Themes/Items/Items01-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Items/Items01-hd.plist",
+      "sha": "eda12a255229238d4f4a29fb29770b59aa70ff2b",
+      "size": 9649,
+      "local": "Themes/Items/Items01-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme1/BG0/BG1-hd.png",
+      "sha": "cf1075c30ea702018daa9e20d836204968a23d7a",
+      "size": 729481,
+      "local": "Themes/Theme1/BG0/BG1-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme1/BG0/BG1-hd.plist",
+      "sha": "217f29757809cff5c08f0db5864caf73163993b0",
+      "size": 883,
+      "local": "Themes/Theme1/BG0/BG1-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme2/BG0/BG1-hd.png",
+      "sha": "814a8c4caa44e0196e4fdce2cc5840d8c0dabd25",
+      "size": 846260,
+      "local": "Themes/Theme2/BG0/BG1-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme2/BG0/BG1-hd.plist",
+      "sha": "3043e9af6cfd0e1dc9c48ac6e6d3263a92a9da6a",
+      "size": 883,
+      "local": "Themes/Theme2/BG0/BG1-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme1/BG1/BG-hd.png",
+      "sha": "ce0c4d60b6d5ee120d1f238049ada77e19f55a8d",
+      "size": 172778,
+      "local": "Themes/Theme1/BG1/BG-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme1/BG1/BG-hd.plist",
+      "sha": "a3d2ad669cfaac6a5c51426e9c3428c598b58b6d",
+      "size": 886,
+      "local": "Themes/Theme1/BG1/BG-hd.plist"
+    },
+    {
+      "path": "Resources/Themes/Theme2/BG1/BG-hd.png",
+      "sha": "562a1ad9aafdc21302e3cb76a8949f4878d06865",
+      "size": 378693,
+      "local": "Themes/Theme2/BG1/BG-hd.png"
+    },
+    {
+      "path": "Resources/Themes/Theme2/BG1/BG-hd.plist",
+      "sha": "b307e2b2a4b1f71c1a808f6c36d79319a96164f7",
+      "size": 886,
+      "local": "Themes/Theme2/BG1/BG-hd.plist"
+    }
+  ]
+}

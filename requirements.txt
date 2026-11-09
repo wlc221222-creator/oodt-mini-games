@@ -1,2 +1,5 @@
-pygame==2.6.1
+# pygame 2.6.1 has no CPython 3.14 Windows wheel. pygame-ce provides the
+# same pygame import and a CPython 3.14 wheel.
+pygame==2.6.1; python_version < "3.14"
+pygame-ce==2.5.8; python_version >= "3.14"
 numpy==2.3.5
