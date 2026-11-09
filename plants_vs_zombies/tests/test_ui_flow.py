@@ -24,6 +24,7 @@ def main():
         x = (w - 800 * scale) / 2 + rect.centerx * scale
         y = (h - 600 * scale) / 2 + rect.centery * scale
         g.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=(round(x), round(y))))
+        g.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=(round(x), round(y))))
 
     click(g._mode_rect(1))
     assert g.state == "levelselect"
