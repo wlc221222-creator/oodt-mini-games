@@ -11,6 +11,7 @@ import random
 import pygame
 
 import config as C
+from polish import adventure_stone, Feedback
 
 
 CREAM = (247, 230, 177)
@@ -59,6 +60,46 @@ class GardenUI:
         self.fonts = {}
         self.skins = {}
         self.images = {}
+        self.motion = {}
+        self.pointer_down = None
+        self.menu_press = None
+        self.touch_id = None
+        self.touch_pos = None
+        self.feedback = []
+
+    def update(self, dt):
+        pointer = self.game._to_canvas(pygame.mouse.get_pos()) if self.touch_pos is None else self.touch_pos
+        for key, value in list(self.motion.items()):
+            rect = pygame.Rect(key)
+            target = 1.0 if rect.collidepoint(pointer) else 0.0
+            self.motion[key] = value + (target - value) * (1 - math.exp(-dt * 14))
+        if self.game.state == 'playing' and not self.game.almanac.opened:
+            for effect in self.feedback:
+                effect.update(dt)
+            self.feedback = [effect for effect in self.feedback if effect.alive]
+
+    def observe_input(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            self.pointer_down = self.game._to_canvas(event.pos)
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.pointer_down = None
+        elif event.type in (pygame.WINDOWFOCUSLOST, pygame.VIDEORESIZE) or (event.type == pygame.KEYDOWN):
+            self.pointer_down = self.menu_press = None
+
+    def button_motion(self, rect, enabled=True):
+        key = tuple(rect)
+        if key not in self.motion:
+            self.motion[key] = 0.0
+        hover = self.motion[key] if enabled else 0.0
+        pressed = enabled and self.pointer_down is not None and rect.collidepoint(self.pointer_down) and self.hover(rect)
+        return hover, pressed
+
+    def emit(self, pos, kind='plant', amount=0):
+        self.feedback.append(Feedback(pos, kind, amount))
+
+    def draw_feedback(self):
+        for effect in self.feedback:
+            effect.draw(self.canvas, self.font(22, True))
 
     @property
     def canvas(self):
@@ -84,7 +125,8 @@ class GardenUI:
         return rect
 
     def hover(self, rect):
-        return rect.collidepoint(self.game._to_canvas(pygame.mouse.get_pos()))
+        pos = self.touch_pos if self.touch_pos is not None else self.game._to_canvas(pygame.mouse.get_pos())
+        return rect.collidepoint(pos)
 
     def scaled(self, image, size):
         key = (id(image), size)
@@ -136,7 +178,14 @@ class GardenUI:
         self.canvas.blit(self.skin(rect.size, material, lit), rect)
 
     def button(self, rect, label, material="wood", enabled=True, size=18):
-        self.panel(rect, material, enabled and self.hover(rect))
+        hover, pressed = self.button_motion(rect, enabled)
+        rect = rect.move(0, 2 if pressed else -round(hover))
+        base = self.skin(rect.size, material, False)
+        self.canvas.blit(base, rect)
+        if hover > 0.01:
+            lit = self.skin(rect.size, material, True).copy()
+            lit.set_alpha(round(hover * 255))
+            self.canvas.blit(lit, rect)
         color = (30, 33, 37) if material == "stone" else CREAM
         self.text(label, rect.center, size, color if enabled else (169, 158, 128),
                   outline=(167, 173, 162) if material == "stone" else (42, 29, 19), bold=True)
@@ -182,21 +231,29 @@ class GardenUI:
         self.text("植物大战", (575, 98), 40, (215, 219, 183), outline=(50, 56, 52), bold=True)
         self.text("僵 尸", (574, 145), 40, (194, 205, 147), outline=(48, 55, 48), bold=True)
         rect = mode_rect(0)
-        name = "adventure_hover" if self.hover(rect) else "adventure"
-        adventure = g.assets.misc(name)
-        if adventure:
-            self.canvas.blit(self.scaled(adventure, rect.size), rect)
-        else:
-            self.button(rect, "冒险模式", "stone", size=34)
-        self.button(mode_rect(1), "选 择 关 卡", "stone", size=29)
+        hover, pressed = self.button_motion(rect)
+        glow = round(hover * 6)
+        key = ('adventure_stone', glow)
+        if key not in self.skins:
+            self.skins[key] = adventure_stone(rect.size, self.font_loader, glow)
+        target = rect.move(0, 3 if pressed else -round(hover * 2))
+        self.canvas.blit(self.skins[key], target)
+        self.menu_stone(mode_rect(1), "选择关卡")
         index = min(g.unlocked, len(C.LEVELS) - 1)
         progress_label = "冒险已通关 · 进入地图重玩" if g.adventure_completed() else f"继续闯关 · {C.LEVELS[index]['id']}"
-        self.text(progress_label, (572, 393), 16,
+        self.text(progress_label, (572, 393), 14,
                   (214, 215, 188), outline=(63, 68, 65))
-        self.button(g.almanac.menu_rect, "植物与僵尸图鉴 [I]", "stone", size=21)
+        self.menu_stone(g.almanac.menu_rect, "植物与僵尸图鉴  [I]")
         self.panel(pygame.Rect(38, 498, 312, 61), "wood")
         self.text("你的庭院，等你来守护", (194, 518), 19, bold=True, outline=(35, 28, 14))
         self.text("Enter 冒险  ·  F 全屏  ·  Esc 退出", (194, 543), 13)
+
+    def menu_stone(self, rect, title):
+        hover, pressed = self.button_motion(rect)
+        key = ('menu_stone', rect.size, title, round(hover * 6))
+        if key not in self.skins:
+            self.skins[key] = adventure_stone(rect.size, self.font_loader, key[-1], title, "")
+        self.canvas.blit(self.skins[key], rect.move(0, 2 if pressed else -round(hover)))
 
     def completed(self, index):
         # Reward ownership also distinguishes the completed final level from
@@ -436,6 +493,8 @@ class GardenUI:
                 self.text(spec["cost"], cost_rect.center, 12, (45, 49, 36), bold=True)
             if g.selected == kind:
                 pygame.draw.rect(self.canvas, (249, 224, 110), rect.inflate(4, 4), 2, border_radius=3)
+            elif self.hover(rect):
+                pygame.draw.rect(self.canvas, (218, 203, 132) if affordable and not cooling else (173, 142, 100), rect.inflate(2, 2), 1, border_radius=3)
             if cooling:
                 self.text(f"{math.ceil(g.cooldowns[kind])}s", rect.center, 17,
                           outline=(30, 30, 25), bold=True)
@@ -447,7 +506,7 @@ class GardenUI:
 
     def pointer_pos(self):
         g = self.game
-        return g.drag_pos if g.drag_pos is not None else g._to_canvas(pygame.mouse.get_pos())
+        return g.drag_pos if g.drag_pos is not None else (self.touch_pos if self.touch_pos is not None else g._to_canvas(pygame.mouse.get_pos()))
 
     def shovel_image(self):
         key = 'shovel'
