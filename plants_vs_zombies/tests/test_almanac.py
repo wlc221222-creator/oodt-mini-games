@@ -23,6 +23,7 @@ def main():
             pos = (round(viewport.x + rect.centerx * viewport.w / C.SCREEN_W),
                    round(viewport.y + rect.centery * viewport.h / C.SCREEN_H))
             g.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos))
+            g.handle_event(pygame.event.Event(pygame.MOUSEBUTTONUP, button=1, pos=pos))
 
         assert set(C.PLANTS) == set(C.PLANT_HELP)
         assert set(C.ZOMBIES) == set(C.ZOMBIE_HELP)
