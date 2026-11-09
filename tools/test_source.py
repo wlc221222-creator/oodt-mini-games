@@ -14,7 +14,7 @@ def main():
     env["SDL_AUDIODRIVER"] = "dummy"
     env["PYTHONIOENCODING"] = "utf-8"
     with tempfile.TemporaryDirectory(prefix="oodt_source_tests_") as temp:
-        for test in ("test_adventure_flow", "test_ui_flow", "test_almanac", "test_pause", "test_drag_tools", "test_hit_flash", "test_progress", "test_death",
+        for test in ("test_adventure_flow", "test_ui_flow", "test_polish", "test_almanac", "test_pause", "test_drag_tools", "test_hit_flash", "test_progress", "test_death",
                      "test_plants", "test_packaged_save", "test_gameplay_revision", "test_expansion", "test_level_balance", "test_smoke"):
             code = "import runpy,save;save.SAVE_PATH=" + repr(str(Path(temp) / "save.json"))
             code += ";runpy.run_path(" + repr("tests/" + test + ".py") + ",run_name='__main__')"
