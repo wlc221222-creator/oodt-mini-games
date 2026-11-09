@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from typing import Dict, List
 
 import pygame
@@ -63,6 +64,30 @@ def _has_alpha(img: pygame.Surface) -> bool:
     return False
 
 
+@lru_cache(maxsize=384)
+def tween_frame(first, second, phase):
+    """Interpolate premultiplied colours so transparent edges stay clean."""
+    import numpy as np
+    size = (max(first.get_width(), second.get_width()), max(first.get_height(), second.get_height()))
+    surfaces = []
+    for frame in (first, second):
+        aligned = pygame.Surface(size, pygame.SRCALPHA)
+        aligned.blit(frame, frame.get_rect(midbottom=(size[0] // 2, size[1])))
+        surfaces.append(aligned)
+    weight = phase / 4.0
+    a, b = [pygame.surfarray.array_alpha(s).astype(np.float32) for s in surfaces]
+    alpha = a * (1 - weight) + b * weight
+    rgb_a, rgb_b = [pygame.surfarray.array3d(s).astype(np.float32) for s in surfaces]
+    premul = rgb_a * a[:, :, None] * (1 - weight) + rgb_b * b[:, :, None] * weight
+    rgb = np.divide(premul, alpha[:, :, None], out=np.zeros_like(premul), where=alpha[:, :, None] > 0)
+    result = pygame.Surface(size, pygame.SRCALPHA)
+    pygame.surfarray.blit_array(result, rgb.clip(0, 255).astype(np.uint8))
+    pixels = pygame.surfarray.pixels_alpha(result)
+    pixels[:] = alpha.clip(0, 255).astype(np.uint8)
+    del pixels
+    return result
+
+
 class Anim:
     """A tiny frame animator shared by every entity."""
 
@@ -104,6 +129,14 @@ class Anim:
 
     def image(self):
         return self.frames[self.i] if self.frames else None
+
+    def smooth_image(self):
+        if not self.frames or len(self.frames) < 2 or not self.loop:
+            return self.image()
+        phase = min(3, int(self.t / self.interval * 4))
+        if phase == 0:
+            return self.image()
+        return tween_frame(self.frames[self.i], self.frames[(self.i + 1) % len(self.frames)], phase)
 
 
 class Assets:
