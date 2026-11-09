@@ -91,6 +91,9 @@ class Plant(Entity):
         self._hit_flash = 0.0
         self.sleeping = False
         self._status_font = None
+        self.visual_age = 0.0
+        self.planted_age = 0.0
+        self.visual_phase = (col * 1.7 + row * 2.3) % math.tau
         self.anim = Anim(get_assets().plant(self.spec["sprite"]),
                          self.ANIM_INTERVAL)
 
@@ -110,6 +113,8 @@ class Plant(Entity):
             name = self.spec["sprite"] + ("Sleep" if asleep else "")
             self.anim.set_frames(get_assets().plant(name), reset=True)
         self.anim.update(dt)
+        self.visual_age += dt
+        self.planted_age += dt
         if self.sleeping:
             return
         self.on_tick(dt, game)
@@ -118,10 +123,18 @@ class Plant(Entity):
         """Hook for subclasses; the default plant does nothing."""
 
     def draw(self, surface: pygame.Surface) -> None:
-        image = self.anim.image()
+        image = self.anim.smooth_image()
         if image is None:
             self._draw_fallback(surface)
         else:
+            # Subtle continuous breathing between the original sprite frames.
+            if self.kind == 'sunflower' and not self.sleeping:
+                angle = math.sin(self.visual_age * 2.2 + self.visual_phase) * 1.1
+                image = pygame.transform.rotozoom(image, angle, 1.0)
+            if self.planted_age < 0.22:
+                t = self.planted_age / 0.22
+                bounce = 1 + 0.07 * math.sin(t * math.pi)
+                image = pygame.transform.smoothscale(image, (image.get_width(), round(image.get_height() * bounce)))
             blit_bottom(surface, image, self.x, self.baseline)
             if self._hit_flash > 0:
                 ghost = image.copy()
