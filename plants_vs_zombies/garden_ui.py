@@ -323,7 +323,7 @@ class GardenUI:
         self.text(f"初始阳光  {lv['sun']}", (655, 370), 16, INK)
         self.text(lv.get("rule", ""), (655, 390), 13, (143, 64, 35))
         reward = C.LEVEL_REWARDS[index]
-        self.text("冒险通关奖励", (652, 408), 15, (116, 80, 36))
+        self.text("首次通关奖励", (652, 408), 15, (116, 80, 36))
         frames = g.assets.plant(C.PLANTS[reward]["sprite"])
         if frames:
             sprite = frames[0]
@@ -419,7 +419,33 @@ class GardenUI:
         ready = len(g.seeds) == target
         self.text("阵容就绪，守住庭院！" if ready else f"再选择 {target - len(g.seeds)} 张植物", (662, 442), 15, INK)
         self.button(CHOOSER_START_RECT, "开始战斗！", enabled=ready, size=23)
-        self.text("后续植物通过冒险解锁", (662, 538), 13, (122, 98, 62))
+        self.text("地图通关也可解锁植物", (662, 538), 13, (122, 98, 62))
+
+    def draw_reward(self):
+        g = self.game
+        kind = g.reward_earned
+        self.panel(pygame.Rect(120, 262, 560, 233))
+        self.text("获得新植物！", (400, 294), 29, GREEN, bold=True)
+        self.panel(pygame.Rect(150, 327, 150, 139), 'wood')
+        frames = g.assets.plant(C.PLANTS[kind]['sprite'])
+        if frames:
+            sprite = frames[0]
+            scale = min(110 / sprite.get_width(), 102 / sprite.get_height())
+            image = self.scaled(sprite, (max(1, round(sprite.get_width() * scale)),
+                                         max(1, round(sprite.get_height() * scale))))
+            self.canvas.blit(image, image.get_rect(center=(225, 395)))
+        self.text(PLANT_NAMES[kind], (478, 344), 29, GREEN, bold=True)
+        spec = C.PLANTS[kind]
+        self.text(f"阳光 {spec['cost']}  ·  冷却 {spec['recharge']:g} 秒", (478, 383), 16, INK)
+        following = g.level_index + 1
+        if following < len(C.LEVELS):
+            prefix = "已解锁下一关" if g.next_level_unlocked else "下一关"
+            label = f"{prefix} · {C.LEVELS[following]['id']}"
+        else:
+            label = "全部关卡通关！可返回地图重玩"
+        self.text(label, (478, 420), 19, (145, 83, 33), bold=True)
+        hint = "奖励已保存 · 点击下一关继续" if following < len(C.LEVELS) else "奖励已保存 · 返回地图可试用"
+        self.text(hint, (478, 452), 14, GREEN)
 
     def draw_wave(self):
         g = self.game

@@ -61,14 +61,14 @@ def main():
             g.state = "menu"
             key(g, pygame.K_RETURN)
             assert g.state == "levelselect", "completed adventure should show the map"
-            # A selected-level victory must not grant adventure rewards.
+            # Clearing an unlocked level from the map also records progress.
             g.unlocked = 0
             g.owned_plants = list(C.START_PLANTS)
             g.start_level(0, "select")
             g.state = "playing"
             g.wave_index = len(g.waves)
             g._check_victory()
-            assert g.unlocked == 0 and g.owned_plants == C.START_PLANTS
+            assert g.unlocked == 1 and g.owned_plants == C.START_PLANTS + C.LEVEL_REWARDS[:1]
             # A reloaded save resumes the latest unlocked adventure level.
             save.save({"unlocked": 2, "plants": C.START_PLANTS + C.LEVEL_REWARDS[:2]})
             resumed = Game()

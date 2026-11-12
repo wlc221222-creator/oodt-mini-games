@@ -182,6 +182,8 @@ class Game:
         self.frost_timer = 0.0
         self.notice = ""
         self.notice_timer = 0.0
+        self.reward_earned: Optional[str] = None
+        self.next_level_unlocked = False
         self._load_wave(0)
 
     def start_level(self, index: int, mode: str) -> None:
@@ -210,6 +212,8 @@ class Game:
         self.frost_timer = 0.0
         self.notice = ""
         self.notice_timer = 0.0
+        self.reward_earned = None
+        self.next_level_unlocked = False
         self.cooldowns = {k: 0.0 for k in C.PLANTS}
         self._load_wave(0)
         self.state = "choosing"
@@ -245,8 +249,11 @@ class Game:
         return min(1.0, done / total)
 
     def available_plants(self) -> List[str]:
-        """Plants the player owns, in shop order."""
-        return [k for k in C.SHOP_ORDER if k in self.owned_plants]
+        """Introduce plants in order; replays allow every earned plant."""
+        if self.level_index < self.unlocked or self.adventure_completed():
+            return [k for k in C.SHOP_ORDER if k in self.owned_plants]
+        allowed = set(C.START_PLANTS + C.LEVEL_REWARDS[:self.level_index])
+        return [k for k in C.SHOP_ORDER if k in self.owned_plants and k in allowed]
 
     def seed_catalog(self):
         pool = self.available_plants()
@@ -379,23 +386,25 @@ class Game:
             self._on_level_won()
 
     def _on_level_won(self) -> None:
-        """Adventure mode unlocks the next level and grants a new plant."""
-        if self.mode != "adventure":
+        """Every legitimately unlocked level records its first-clear reward."""
+        if self.level_index > self.unlocked:
             return
-        if self.level_index + 1 > self.unlocked:
-            self.unlocked = min(self.level_index + 1, len(C.LEVELS) - 1)
+        next_index = min(self.level_index + 1, len(C.LEVELS) - 1)
+        self.next_level_unlocked = next_index > self.unlocked
+        self.unlocked = max(self.unlocked, next_index)
         if self.level_index < len(C.LEVEL_REWARDS):
             reward = C.LEVEL_REWARDS[self.level_index]
             if reward not in self.owned_plants:
                 self.owned_plants.append(reward)
+                self.reward_earned = reward
         self._save_progress()
 
     def _continue_result(self) -> None:
         """Advance an adventure win; retries keep their original mode/level."""
-        if self.state == "won" and self.mode == "adventure":
+        if self.state == "won":
             next_index = self.level_index + 1
-            if next_index < len(C.LEVELS):
-                self.start_level(next_index, "adventure")
+            if next_index < len(C.LEVELS) and next_index <= self.unlocked:
+                self.start_level(next_index, self.mode)
             else:
                 self.state = "levelselect"
             return
@@ -409,10 +418,10 @@ class Game:
             self.state = "levelselect"
 
     def _result_action_label(self) -> str:
-        if self.state == "won" and self.mode == "adventure":
-            if self.level_index + 1 < len(C.LEVELS):
+        if self.state == "won":
+            if self.level_index + 1 < len(C.LEVELS) and self.level_index + 1 <= self.unlocked:
                 return f"下一关 · {C.LEVELS[self.level_index + 1]['id']}"
-            return "冒险通关！返回地图"
+            return "返回选关地图"
         return "重新挑战" if self.state == "lost" else "再次挑战"
 
     # ----------------------------------------------------------------- input
@@ -908,8 +917,6 @@ class Game:
             # Scale it to fill the window so no battlefield shows around it.
             scaled = pygame.transform.smoothscale(art, (C.SCREEN_W, C.SCREEN_H))
             self.canvas.blit(scaled, (0, 0))
-            if self.state == "won":
-                self._draw_result_summary(cx)
         else:
             overlay = pygame.Surface((C.SCREEN_W, C.SCREEN_H), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 170))
@@ -917,6 +924,11 @@ class Game:
             color = (120, 255, 140) if self.state == "won" else (255, 140, 140)
             text = self.big_font.render(msg, True, color)
             self.canvas.blit(text, text.get_rect(center=(cx, C.SCREEN_H // 2 - 20)))
+        if self.state == "won":
+            if self.reward_earned:
+                self.ui.draw_reward()
+            else:
+                self._draw_result_summary(cx)
         self.ui.button(RESULT_PRIMARY_RECT, self._result_action_label(), size=23)
         self.ui.button(RESULT_MAP_RECT, "选关地图", size=18)
         sub = self.ui.font(16).render("Enter 继续  ·  R 重试本关  ·  Esc 返回庭院", True, (255, 255, 255))
@@ -929,12 +941,7 @@ class Game:
 
     def _draw_result_summary(self, cx: int) -> None:
         """Fill the original panel's empty middle with this match's result."""
-        reward_line = "选关挑战完成 · 返回地图可再次挑战"
-        if self.mode == "adventure":
-            if self.level_index + 1 < len(C.LEVELS):
-                reward_line = f"解锁植物：{self._reward_name()} · 下一关 {C.LEVELS[self.level_index + 1]['id']}"
-            else:
-                reward_line = f"解锁植物：{self._reward_name()} · 全部关卡通关！"
+        reward_line = f"本关奖励已领取：{self._reward_name()}"
         lines = [
             (f"关卡 {self.level['id']}　抵御波次 {len(self.waves)} / {len(self.waves)}",
              26, (60, 40, 20)),
