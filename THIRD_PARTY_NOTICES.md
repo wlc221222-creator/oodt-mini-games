@@ -9,6 +9,10 @@
 - This repository does not claim ownership of those assets or grant an additional license for them.
 - Original shovel sprite: `plants_vs_zombies/assets/graphics/Screen/Shovel.png`, copied unchanged from [FregD156/PvZ_Assets](https://github.com/FregD156/PvZ_Assets/blob/8ba94e95cfe7d0de5682f8258d3b932dbdac885c/images/Shovel.png). That repository identifies the graphics as extracted from the original game's macOS `main.pak`. Git blob SHA: `8b27bd461c636b30254df95e7b609066a9a99eb4`. The sprite remains the property of PopCap / Electronic Arts; no additional rights are granted here.
 
+- The garden selector follows the scene-aligned controls and one-shot hand transition in [Patoke's GameSelector](https://github.com/Patoke/re-plants-vs-zombies/blob/main/Lawn/Widget/GameSelector.cpp). The localized art in `plants_vs_zombies/assets/graphics/Screen/Selector/` derives from [FregD156/PvZ_Assets at 8ba94e9](https://github.com/FregD156/PvZ_Assets/tree/8ba94e95cfe7d0de5682f8258d3b932dbdac885c). The recesses use the silhouettes of `SelectorScreen_StartAdventure_Button1` and `SelectorScreen_Challenges_button`. The book, shadow, logo, options dialog, return button and checkboxes use the corresponding selector and options artwork. The hand atlas composites the original 25 poses of `reanim/Zombie_hand.reanim` with its arm, hand, finger and rock sprites.
+
+- The seed chooser follows the eight-column cabinet and packet flight behavior of [SeedChooserScreen.cpp](https://github.com/Patoke/re-plants-vs-zombies/blob/main/Lawn/Widget/SeedChooserScreen.cpp). The seed bank, packet atlas, silhouettes, cabinet and buttons in `plants_vs_zombies/assets/graphics/Screen/SeedChooser/` are from [FregD156/PvZ_Assets, revision 8ba94e9](https://github.com/FregD156/PvZ_Assets/tree/8ba94e95cfe7d0de5682f8258d3b932dbdac885c/images). These original-game graphics belong to their respective rights holders.
+
 ## Carrot Fantasy / 保卫萝卜 graphics
 
 - Source mirror: [JezaChen/CarrotGuardGame](https://github.com/JezaChen/CarrotGuardGame/tree/478f66092f994b95408fa130e8b0418af4f9828f/Resources/Themes), a third-party cocos2d-x recreation.
