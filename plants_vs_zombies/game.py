@@ -20,13 +20,15 @@ import pygame
 
 import config as C
 import save as savegame
+import selector
 from assets import get_assets
 from almanac import Almanac
+from seed_chooser import SeedChooser, packet_rect, bank_rect
 from newplants import NEW_PLANT_CLASSES
 from garden_ui import (GardenUI, mode_rect, level_rect, BACK_RECT,
                        CHOOSER_BACK_RECT, CHOOSER_START_RECT,
                        RESULT_PRIMARY_RECT, RESULT_MAP_RECT, PLANT_NAMES,
-                       MAP_PREV_RECT, MAP_NEXT_RECT, SEED_PREV_RECT, SEED_NEXT_RECT,
+                       MAP_PREV_RECT, MAP_NEXT_RECT,
                        PAUSE_BUTTON_RECT, PAUSE_RESUME_RECT, PAUSE_MENU_RECT,
                        SHOVEL_RECT)
 from entities import (
@@ -59,6 +61,7 @@ def load_font(size: int) -> pygame.font.Font:
                  r"C:\Windows\Fonts\simhei.ttf",
                  r"C:\Windows\Fonts\simsun.ttc",
                  "/System/Library/Fonts/PingFang.ttc",
+                 "/System/Library/Fonts/STHeiti Medium.ttc",
                  "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc"):
         if os.path.exists(path):
             try:
@@ -87,6 +90,7 @@ class Game:
         self.canvas = pygame.Surface((C.SCREEN_W, C.SCREEN_H)).convert()
         self.ui = GardenUI(self, load_font)
         self.almanac = Almanac(self)
+        self.chooser = SeedChooser(self)
         self.fullscreen = False
         self._load_progress()
 
@@ -172,13 +176,12 @@ class Game:
         self.spawn_queue: List[list] = []
         # Per-plant card cooldown: seconds of recharge remaining, keyed by kind.
         self.cooldowns: Dict[str, float] = {k: 0.0 for k in C.PLANTS}
-        # menu | mode | levelselect | choosing | playing | won | lost
+        self.intro_elapsed = 0.0
         self.state = "menu"
         self.mode = "adventure"      # adventure | select
         self.seeds: List[str] = []
         self.elapsed = 0.0
         self.level_page = self.unlocked // 7
-        self.seed_page = 0
         self.frost_timer = 0.0
         self.notice = ""
         self.notice_timer = 0.0
@@ -208,7 +211,6 @@ class Game:
         self.wave_timer = 0.0
         self.elapsed = 0.0
         self.level_page = self.level_index // 7
-        self.seed_page = 0
         self.frost_timer = 0.0
         self.notice = ""
         self.notice_timer = 0.0
@@ -216,6 +218,7 @@ class Game:
         self.next_level_unlocked = False
         self.cooldowns = {k: 0.0 for k in C.PLANTS}
         self._load_wave(0)
+        self.chooser.reset()
         self.state = "choosing"
         self.seeds = [kind for kind in self.seeds
                       if kind in self.available_plants()][:self.required_seeds()]
@@ -255,22 +258,12 @@ class Game:
         allowed = set(C.START_PLANTS + C.LEVEL_REWARDS[:self.level_index])
         return [k for k in C.SHOP_ORDER if k in self.owned_plants and k in allowed]
 
-    def seed_catalog(self):
-        pool = self.available_plants()
-        return pool + [kind for kind in C.SHOP_ORDER if kind not in pool]
-
-    def visible_seeds(self):
-        start = self.seed_page * 10
-        return self.seed_catalog()[start:start + 10]
-
     def visible_levels(self):
         start = self.level_page * 7
         return range(start, min(start + 7, len(C.LEVELS)))
 
     def turn_page(self, direction):
-        if self.state == "choosing":
-            self.seed_page = max(0, min(self.seed_page + direction, (len(C.SHOP_ORDER) - 1) // 10))
-        elif self.state == "levelselect":
+        if self.state == "levelselect":
             self.level_page = max(0, min(self.level_page + direction, (len(C.LEVELS) - 1) // 7))
 
     def _load_wave(self, index: int) -> None:
@@ -318,6 +311,13 @@ class Game:
     # ---------------------------------------------------------------- update
     def update(self, dt: float) -> None:
         self.ui.update(dt)
+        if self.state == "choosing" and not self.almanac.opened:
+            self.chooser.update(dt)
+        if self.state == "starting":
+            self.intro_elapsed += dt
+            if self.intro_elapsed >= selector.INTRO_SECONDS:
+                self.start_adventure()
+            return
         if self.state != "playing" or self.almanac.opened:
             return
         self.elapsed += dt
@@ -460,16 +460,14 @@ class Game:
         if event.type in (pygame.WINDOWFOCUSLOST, pygame.VIDEORESIZE):
             self.ui.touch_id = self.ui.touch_pos = None
         if self.state == 'menu' and not self.almanac.opened:
-            controls = (self._mode_rect(0), self._mode_rect(1), self.almanac.menu_rect)
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                pos = self._to_canvas(event.pos)
-                self.ui.menu_press = next((i for i, rect in enumerate(controls) if rect.collidepoint(pos)), None)
+                self.ui.menu_press = selector.control_at(self._to_canvas(event.pos))
                 return
             if event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 pressed = self.ui.menu_press
                 self.ui.menu_press = None
                 pos = self._to_canvas(event.pos)
-                if pressed is not None and controls[pressed].collidepoint(pos):
+                if pressed is not None and pressed == selector.control_at(pos):
                     self._on_mode_click(pos)
                 return
         if event.type == pygame.WINDOWFOCUSLOST:
@@ -480,6 +478,22 @@ class Game:
             self.windowed_size = (max(400, event.w), max(300, event.h))
             self.screen = pygame.display.set_mode(self.windowed_size,
                                                   pygame.RESIZABLE)
+            return
+
+        if self.state == "starting":
+            return
+        if self.state == "settings":
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_f:
+                    self.toggle_fullscreen()
+                elif event.key in (pygame.K_ESCAPE, pygame.K_RETURN):
+                    self.state = "menu"
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                pos = self._to_canvas(event.pos)
+                if selector.FULLSCREEN.collidepoint(pos):
+                    self.toggle_fullscreen()
+                elif selector.DONE.collidepoint(pos):
+                    self.state = "menu"
             return
 
         if event.type == pygame.KEYDOWN and event.key == pygame.K_i:
@@ -515,7 +529,7 @@ class Game:
             return
 
         if event.type == pygame.KEYDOWN:
-            if event.key in (pygame.K_LEFT, pygame.K_RIGHT) and self.state in ("choosing", "levelselect"):
+            if event.key in (pygame.K_LEFT, pygame.K_RIGHT) and self.state == "levelselect":
                 self.turn_page(-1 if event.key == pygame.K_LEFT else 1)
                 return
             if event.key == pygame.K_ESCAPE:
@@ -541,14 +555,14 @@ class Game:
                 self._continue_result()
                 return
             if event.key == pygame.K_RETURN and self.state == "menu":
-                self.start_adventure()
+                self._begin_adventure_intro()
                 return
             if event.key == pygame.K_RETURN and self.state == "choosing":
                 if len(self.seeds) == self.required_seeds():
                     self.state = "playing"
             if self.state == "choosing" and event.key == pygame.K_a:
                 pool = self.available_plants()
-                self.seeds = pool[:C.MAX_SEEDS]
+                self.chooser.select(pool[:C.MAX_SEEDS])
             if self.state == "playing":
                 keys = (pygame.K_1, pygame.K_2, pygame.K_3, pygame.K_4,
                         pygame.K_5, pygame.K_6, pygame.K_7, pygame.K_8)
@@ -570,9 +584,6 @@ class Game:
             return
 
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.state == "menu":
-                self._on_mode_click(self._to_canvas(event.pos))
-                return
             if self.state == "levelselect":
                 self._on_levelselect_click(self._to_canvas(event.pos))
                 return
@@ -735,34 +746,16 @@ class Game:
         sw, sh = int(C.SCREEN_W * scale), int(C.SCREEN_H * scale)
         return pygame.Rect((w - sw) // 2, (h - sh) // 2, sw, sh)
 
-    def _chooser_origin(self):
-        """Panel top-left, and the card grid origin inside it."""
-        return (C.CHOOSER_PANEL_X, C.CHOOSER_PANEL_Y,
-                C.CHOOSER_GRID_X, C.CHOOSER_GRID_Y)
-
     def required_seeds(self) -> int:
         return min(C.MAX_SEEDS, len(self.available_plants()))
 
     def _chooser_rect(self, index: int) -> pygame.Rect:
-        """Grid cell of the index-th plant in the pool."""
-        _, _, gx, gy = self._chooser_origin()
-        col, row = index % C.CHOOSER_COLS, index // C.CHOOSER_COLS
-        return pygame.Rect(gx + col * C.CHOOSER_DX,
-                           gy + row * C.CHOOSER_DY,
-                           C.CHOOSER_CARD_W, C.CHOOSER_CARD_H)
+        return packet_rect(C.SHOP_ORDER[index])
 
     def _seed_slot_rect(self, index: int) -> pygame.Rect:
-        """A slot in the top preview strip (the bar you fill up)."""
-        return pygame.Rect(C.CARD_X0 + index * C.CARD_DX, C.CARD_Y,
-                           C.CHOOSER_CARD_W, C.CHOOSER_CARD_H)
+        return bank_rect(index)
 
     def _on_choose_click(self, pos) -> None:
-        if SEED_PREV_RECT.collidepoint(pos):
-            self.turn_page(-1)
-            return
-        if SEED_NEXT_RECT.collidepoint(pos):
-            self.turn_page(1)
-            return
         if CHOOSER_BACK_RECT.collidepoint(pos):
             self.state = "levelselect"
             return
@@ -773,18 +766,18 @@ class Game:
         # Remove a card from the preview strip.
         for i in range(len(self.seeds)):
             if self._seed_slot_rect(i).collidepoint(pos):
-                self.seeds.pop(i)
+                self.chooser.select(self.seeds[:i] + self.seeds[i + 1:])
                 return
         # Add a plant from the pool.
-        for i, kind in enumerate(self.visible_seeds()):
+        for i, kind in enumerate(C.SHOP_ORDER):
             if not self._chooser_rect(i).collidepoint(pos):
                 continue
             if kind not in self.available_plants():
                 return
             if kind in self.seeds:
-                self.seeds.remove(kind)
+                self.chooser.select([seed for seed in self.seeds if seed != kind])
             elif len(self.seeds) < C.MAX_SEEDS:
-                self.seeds.append(kind)
+                self.chooser.select(self.seeds + [kind])
             return
 
     def _start_button_rect(self) -> pygame.Rect:
@@ -794,16 +787,23 @@ class Game:
     def _mode_rect(self, which: int) -> pygame.Rect:
         return mode_rect(which)
 
+    def _begin_adventure_intro(self) -> None:
+        self.intro_elapsed = 0.0
+        self.state = "starting"
+
     def _on_mode_click(self, pos) -> None:
-        if self.almanac.menu_rect.collidepoint(pos):
-            self.almanac.opened = True
-            return
-        if self._mode_rect(0).collidepoint(pos):
-            self.start_adventure()
-        elif self._mode_rect(1).collidepoint(pos):
+        control = selector.control_at(pos)
+        if control == 0:
+            self._begin_adventure_intro()
+        elif control == 1:
             self.mode = "select"
             self.level_page = self.unlocked // 7
             self.state = "levelselect"
+        elif control == 2:
+            self.almanac.category = self.almanac.page = 0
+            self.almanac.opened = True
+        elif control == 3:
+            self.state = "settings"
 
     def _level_rect(self, index: int) -> pygame.Rect:
         return level_rect(index)
@@ -828,7 +828,7 @@ class Game:
                 return
 
     def _draw_chooser(self) -> None:
-        self.ui.draw_chooser()
+        self.chooser.draw()
 
     # ----------------------------------------------------- mode / level UI
     def _draw_levelselect(self) -> None:
@@ -840,7 +840,7 @@ class Game:
             self.almanac.draw()
             self._present()
             return
-        if self.state == "menu":
+        if self.state in ("menu", "starting", "settings"):
             self._draw_menu()
         elif self.state == "levelselect":
             self._draw_levelselect()

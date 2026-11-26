@@ -3,10 +3,11 @@ import pygame
 
 import config as C
 from garden_ui import PLANT_NAMES
+from selector import BOUNDS
 
 
 class Almanac:
-    menu_rect = pygame.Rect(439, 423, 266, 48)
+    menu_rect = BOUNDS[2]
     close_rect = pygame.Rect(650, 23, 123, 38)
     tabs = (pygame.Rect(210, 23, 160, 38), pygame.Rect(389, 23, 160, 38))
     prev_rect = pygame.Rect(220, 540, 110, 36)

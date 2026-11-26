@@ -10,6 +10,7 @@ import pygame
 import config as C
 import save
 from game import Game
+from selector import INTRO_SECONDS
 from garden_ui import RESULT_PRIMARY_RECT, RESULT_MAP_RECT
 
 
@@ -46,6 +47,8 @@ def main():
                         click(g, g._level_rect(0))
                     else:
                         click(g, g._mode_rect(0))
+                        g.update(INTRO_SECONDS)
+                        assert g.state == "choosing"
                     assert g.available_plants() == C.START_PLANTS
                     win(g)
                     assert g.unlocked == 1 and g.reward_earned == 'wallnut'

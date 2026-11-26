@@ -33,10 +33,22 @@ def main():
     click(g._level_rect(0))
     assert g.state == "choosing"
     click(g._chooser_rect(0))
+    g.update(.08)
+    flight = g.chooser.flights['sunflower']
+    mid_flight = flight.position(g.chooser.age)
+    assert mid_flight != flight.start and mid_flight != flight.end
+    wave_timer = g.wave_timer
+    click(g._seed_slot_rect(0))
+    assert not g.seeds and g.chooser.flights['sunflower'].start == mid_flight
+    click(g._chooser_rect(0))
+    assert g.seeds == ['sunflower'] and g.chooser.flights['sunflower'].start == mid_flight
+    g.update(.26)
+    assert not g.chooser.flights and g.wave_timer == wave_timer
     click(g._start_button_rect())
     assert g.state == "choosing", "incomplete selection should not start"
     click(g._chooser_rect(1))
     click(g._seed_slot_rect(0))
+    assert g.chooser.flights["peashooter"].end == pygame.Vector2(g._seed_slot_rect(0).topleft)
     assert g.seeds == ["peashooter"], "preview click should remove its card"
     click(g._chooser_rect(0))
     g.draw()
