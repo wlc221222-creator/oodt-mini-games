@@ -12,6 +12,7 @@ import pygame
 import config as C
 import save
 from game import Game
+from selector import INTRO_SECONDS
 from garden_ui import RESULT_PRIMARY_RECT
 
 
@@ -27,6 +28,8 @@ def main():
             g = Game()
             assert g.unlocked == 0 and g.owned_plants == C.START_PLANTS
             g._on_mode_click(g._mode_rect(0).center)
+            assert g.state == "starting"
+            g.update(INTRO_SECONDS)
             assert g.state == "choosing" and g.level_index == 0
             # A failed attempt cannot grant progress or plants.
             g.state = "lost"
@@ -60,6 +63,7 @@ def main():
             assert g.state == "levelselect" and g.adventure_completed()
             g.state = "menu"
             key(g, pygame.K_RETURN)
+            g.update(INTRO_SECONDS)
             assert g.state == "levelselect", "completed adventure should show the map"
             # Clearing an unlocked level from the map also records progress.
             g.unlocked = 0
@@ -73,10 +77,14 @@ def main():
             save.save({"unlocked": 2, "plants": C.START_PLANTS + C.LEVEL_REWARDS[:2]})
             resumed = Game()
             key(resumed, pygame.K_RETURN)
+            assert resumed.state == "starting"
+            resumed.update(INTRO_SECONDS)
             assert resumed.state == "choosing" and resumed.level_index == 2
             resumed.seeds = resumed.available_plants()[:C.MAX_SEEDS]
             key(resumed, pygame.K_ESCAPE)
             key(resumed, pygame.K_RETURN)
+            assert resumed.state == "starting"
+            resumed.update(INTRO_SECONDS)
             assert resumed.state == "choosing", "menu Enter must not skip seed selection"
             print(f"PASS: 1-1 to {C.LEVELS[-1]['id']} progression, next-level click/Enter, rewards, retries and save resume")
     finally:

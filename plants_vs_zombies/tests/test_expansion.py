@@ -13,7 +13,7 @@ import save
 from game import Game, PLANT_CLASSES
 from entities import Zombie, Projectile, Peashooter
 from newplants import PuffShroom, SunShroom, ScaredyShroom, Chomper, Squash, Spikeweed, IceShroom
-from garden_ui import MAP_NEXT_RECT, MAP_PREV_RECT, SEED_NEXT_RECT
+from garden_ui import MAP_NEXT_RECT, MAP_PREV_RECT
 
 
 def main():
@@ -34,10 +34,9 @@ def main():
             g._load_progress()
             assert g.unlocked == 2
             g.start_level(0, 'select')
-            g.seed_page = 1
             g.seeds = []
-            g._on_choose_click(g._chooser_rect(0).center)
-            assert not g.seeds, 'locked second-page seeds must not be selectable'
+            g._on_choose_click(g._chooser_rect(C.SHOP_ORDER.index('iceshroom')).center)
+            assert not g.seeds, 'locked cabinet seeds must not be selectable'
             print('PASS: completed seven-level save resumes at 2-3; partial saves preserve progress')
 
             def click(rect):
@@ -58,15 +57,10 @@ def main():
             click(g._level_rect(7))
             assert g.level_index == 7 and g.state == 'choosing'
             g.seeds = []
-            click(SEED_NEXT_RECT)
-            assert g.seed_page == 1
-            for i, kind in enumerate(g.visible_seeds()):
+            for i, kind in enumerate(C.SHOP_ORDER[10:], 10):
                 click(g._chooser_rect(i))
                 assert kind in g.seeds
-            for kind in g.seeds:
-                assert kind in C.SHOP_ORDER[10:]
-            g.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_LEFT))
-            assert g.seed_page == 0 and len(g.seeds) == 6
+            assert g.seeds == C.SHOP_ORDER[10:]
             click(g._chooser_rect(0))
             click(g._chooser_rect(1))
             assert len(g.seeds) == 8
@@ -76,7 +70,7 @@ def main():
             click(MAP_PREV_RECT)
             click(g._level_rect(0))
             assert g.level_index == 0
-            print('PASS: scaled map/seed pagination, locked levels, cross-page selections and battle start')
+            print('PASS: scaled map pagination, locked levels, cabinet selections and battle start')
 
             def fresh(index=7):
                 g.start_level(index, 'select')
@@ -222,7 +216,6 @@ def main():
             assert g.assets.zombie('newspaper')['rage_walk']
             for index in range(len(C.LEVELS)):
                 fresh(index)
-                g.seed_page = 1
                 g.state = 'choosing'
                 g.draw()
             for page in (0, 1):

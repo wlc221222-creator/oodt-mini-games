@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import pygame
 import save
 from game import Game
+import selector
 from entities import Sunflower, Sun
 from assets import Anim, tween_frame
 
@@ -35,6 +36,25 @@ def main():
                 g.screen = pygame.display.set_mode(size)
                 g.state = 'menu'
                 center = g._mode_rect(0).center
+                # Empty stone inside the bounding rectangle is outside its sloped face.
+                corner = g._mode_rect(0).topright
+                mouse(pygame.MOUSEBUTTONDOWN, (corner[0] - 2, corner[1] + 2))
+                assert g.ui.menu_press is None
+                mouse(pygame.MOUSEBUTTONUP, center)
+                assert g.state == 'menu'
+                for event in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    mouse(event, selector.BOUNDS[3].center)
+                assert g.state == 'settings'
+                g.draw()
+                for event in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    mouse(event, selector.FULLSCREEN.center)
+                assert g.fullscreen and g.state == 'settings'
+                g.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_f))
+                assert not g.fullscreen
+                for event in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP):
+                    mouse(event, selector.DONE.center)
+                assert g.state == 'menu'
+                g.screen = pygame.display.set_mode(size)
                 mouse(pygame.MOUSEBUTTONDOWN, center)
                 assert g.state == 'menu' and g.ui.menu_press == 0
                 g.draw()
@@ -42,12 +62,23 @@ def main():
                 assert g.state == 'menu' and g.ui.menu_press is None
                 mouse(pygame.MOUSEBUTTONDOWN, center)
                 mouse(pygame.MOUSEBUTTONUP, center)
+                assert g.state == 'starting'
+                elapsed = g.elapsed
+                g.update(.4)
+                g.draw()
+                g.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_i))
+                mouse(pygame.MOUSEBUTTONDOWN, g.almanac.menu_rect.center)
+                mouse(pygame.MOUSEBUTTONUP, g.almanac.menu_rect.center)
+                assert g.state == 'starting' and not g.almanac.opened and g.elapsed == elapsed
+                g.update(selector.INTRO_SECONDS - .4)
                 assert g.state == 'choosing'
                 g.state = 'menu'
                 finger(pygame.FINGERDOWN, center)
                 finger(pygame.FINGERDOWN, g._mode_rect(1).center, 18)
                 assert g.ui.touch_id == 17 and g.ui.menu_press == 0
                 finger(pygame.FINGERUP, center)
+                assert g.state == "starting"
+                g.update(selector.INTRO_SECONDS)
                 assert g.state == 'choosing' and g.ui.touch_id is None
                 g.seeds = ['sunflower', 'peashooter']
                 g.state = 'playing'
