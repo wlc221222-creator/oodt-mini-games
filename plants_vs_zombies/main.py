@@ -40,6 +40,13 @@ def self_test(report_path: str) -> int:
             assert game.unlocked == 0 and game.owned_plants == C.START_PLANTS
             for name in ("menu", "background_0", "background_1", "wave_head", "wave_flag", "shovel"):
                 assert game.assets.misc(name) is not None, name
+            for name in ("adventure", "levels", "almanac", "book_shadow", "logo", "hand",
+                         "settings", "return", "check_on", "check_off"):
+                assert game.assets.misc("selector_" + name) is not None, name
+            for name in ("street_0", "street_1", "SeedBank", "seeds", "SeedPacketSilhouette",
+                         "SeedChooser_Background", "SeedChooser_Button", "SeedChooser_Button2",
+                         "SeedChooser_Button_Disabled", "SeedChooser_Button_Glow"):
+                assert game.assets.misc(name) is not None, name
             for kind, spec in C.PLANTS.items():
                 assert game.assets.plant(spec["sprite"]), kind
                 assert game.assets.card(spec["card"]) is not None, kind
@@ -48,7 +55,12 @@ def self_test(report_path: str) -> int:
             game.draw()
             game.start_adventure()
             assert game.level["id"] == "1-1" and game.state == "choosing"
-            game.seeds = list(C.START_PLANTS)
+            for i in range(len(C.START_PLANTS)):
+                game.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1,
+                                                     pos=game._chooser_rect(i).center))
+            game.update(.3)
+            game.draw()
+            assert game.seeds == C.START_PLANTS and not game.chooser.flights
             game.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_RETURN))
             game.draw()
             assert game.state == "playing"

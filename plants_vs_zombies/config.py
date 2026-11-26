@@ -36,20 +36,6 @@ CARD_Y = 8
 # the cards from overflowing the wooden bar.
 MAX_SEEDS = 8
 
-# Seed-chooser geometry: a preview strip along the top (the original's wooden
-# bar) plus a grid of every available plant below it.
-CHOOSER_COLS = 5
-CHOOSER_DX = 90
-CHOOSER_DY = 116
-CHOOSER_CARD_W = 55
-CHOOSER_CARD_H = 74
-CHOOSER_GRID_X = 71
-CHOOSER_GRID_Y = 212            # first grid row (canvas coords)
-CHOOSER_PANEL_X = 26
-CHOOSER_PANEL_Y = 145
-CHOOSER_PANEL_W = 510
-CHOOSER_PANEL_H = 410
-
 # ------------------------------------------------------------ progression
 # Adventure mode is a linear chain of levels. Beating one unlocks the next
 # and grants a new plant, which then appears in later seed choosers -- this is

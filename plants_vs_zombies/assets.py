@@ -233,6 +233,7 @@ class Assets:
             bg = os.path.join(GFX_DIR, "Items", "Background", f"Background_{index}.jpg")
             if os.path.exists(bg):
                 img = pygame.image.load(bg).convert()
+                self._misc[f"street_{index}"] = img.subsurface((img.get_width() - 895, 0, 800, 600))
                 self._misc[f"background_{index}"] = img.subsurface(
                     pygame.Rect(BG_CROP_X, 0, 800, 600)).copy()
         self._misc["background"] = self._misc.get("background_0")
@@ -240,6 +241,13 @@ class Assets:
         scr = os.path.join(GFX_DIR, "Screen")
         self._misc["menu"] = one(os.path.join(scr, "MainMenu.png"),
                                  (MENU_CROP_X, 0, 800, 600))
+        for name in ("adventure", "levels", "almanac", "book_shadow", "logo", "hand",
+                     "settings", "check_on", "check_off", "return"):
+            self._misc["selector_" + name] = one(os.path.join(scr, "Selector", name + ".png"))
+        for name in ("seeds", "SeedBank", "SeedPacketSilhouette", "SeedChooser_Background",
+                     "SeedChooser_Button", "SeedChooser_Button_Glow",
+                     "SeedChooser_Button_Disabled", "SeedChooser_Button2"):
+            self._misc[name] = one(os.path.join(scr, "SeedChooser", name + ".png"))
         self._misc["victory"] = one(os.path.join(scr, "GameVictory.png"))
         self._misc["lose"] = one(os.path.join(scr, "GameLoose.png"))
         self._misc["bar"] = one(os.path.join(scr, "ChooserBackground.png"))
